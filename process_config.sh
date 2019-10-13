@@ -33,12 +33,17 @@ function process_config() {
         echo "  ./process_config.sh config.txt"
         exit 1
     fi
-    echo "logging ffmpeg progress to: ${LOG_FILE}" && echo ""
+    echo "ffmpeg progress will be logged to: ${LOG_FILE}" && echo ""
+
+    # get index of the value string for the -vf flag (in CONV_FLAGS)
+    loc=$(get_loc)
 
     # iterate over lines in $config_file
     while IFS= read -r line
     do
         echo "" && echo "current=>>> $line"
+        flags=("${CONV_FLAGS[@]}")              # copy array of flags
+
         # parse values from line
         IFS=',' read -ra ARR <<< "$line"
         count=$(awk -F"," '{print NF-1}' <<< "${line}")
@@ -50,13 +55,20 @@ function process_config() {
 
         # set flags for rotation (if needed):
         # https://stackoverflow.com/a/9570992
+        # TODO: delete this part?
         flags_rot=() # empty array
         if [ "$rot" == "90" ]; then
-            flags_rot+=(-vf "transpose=1")
+            flags_rot+=(-vf 'transpose=1')
         elif [ "$rot" == "180" ]; then
             flags_rot+=(-vf 'transpose=2,transpose=2')
         elif [ "$rot" == "270" ]; then
             flags_rot+=(-vf 'transpose=2')
+        fi
+
+        # rotate and add padding to video if needed (modify -vf filter)
+        if ! [ -z "$rot" ]; then
+            flags[$loc]="${flags[$loc]},pad=1920:1080:ih:(ow-iw)/2:color=AliceBlue"
+            echo "  modified -vf filter to: \"${flags[$loc]}\""
         fi
 
         # generate filename
@@ -66,15 +78,13 @@ function process_config() {
         newfile="$(mktemp -u --tmpdir=/tmp/converted_vids).${OUT_EXT}" && rm -f $newfile
 
         # print command to log
-        echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -y -i $fname ${CONV_FLAGS[@]} ${flags_rot[@]} ${newfile} < /dev/null >>${LOG_FILE} 2>>&1" >>${LOG_FILE}
+        echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -y -i $fname ${flags[@]} ${newfile} < /dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
         # run command
-        ffmpeg -hide_banner -y -i $fname ${CONV_FLAGS[@]} ${flags_rot[@]} ${newfile} < /dev/null >>${LOG_FILE} 2>&1
+        ffmpeg -hide_banner -y -i $fname ${flags[@]} ${newfile} </dev/null >>${LOG_FILE} 2>&1
 
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: $fname"
-            echo "  $CMD"
-            echo ""
-            exit 1
+            echo "  $CMD" && echo "" && exit 1
         fi
         # TODO: use another tool/command to copy the metadata afterwards? (map_metadata?)
         #touch -r "$fname" "$newfile"  # copy original file's metadata
@@ -87,6 +97,24 @@ function process_config() {
         #fi
 
     done < "$CONFIG_FILE"
+}
+
+# returns the location of the value corresponding to the -vf flag in CONV_FLAGS
+# or exits if this value doesn't exist in the array
+function get_loc() {
+    for loc in "${!CONV_FLAGS[@]}"; do
+        #echo "$loc => ${CONV_FLAGS[$loc]}"
+        if [ "${CONV_FLAGS[$loc]}" == "-vf" ]; then
+            loc=$((loc+1))
+            break
+        fi
+    done
+    #echo "loc=$loc (of ${#CONV_FLAGS[@]})"
+    if (( "$loc" == "${#CONV_FLAGS[@]}-1" )); then
+        echo "ERROR: flag '-vf' not found in array CONV_FLAGS"
+        exit 1
+    fi
+    echo "$loc"
 }
 
 process_config "$@"
