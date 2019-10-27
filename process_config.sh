@@ -4,20 +4,43 @@
 # and rotate files (where rot!=""), adding black padding as needed
 # (the point is someone can manually modify the file before running this step)
 # mediainfo <video> # (useful command)
+# get help with a filter (e.g. apad):
+#  ffmpeg -h filter=apad
+#
+# TODO: ensure both channels of audio are included (they weren't for the mexico video...)
+# TODO: make all my ffmpeg code on repo on github (and share it online, blog, etc later)
+# 
+# useful filters to consider in future:
+#   (https://ffmpeg.org/ffmpeg-filters.html)
+#   afade (apply fad-in/out effect to input audio)
+#   apad (pad the end of an audio stream with silence)
+#   aresample (stretch/squeeze the audio data to make it match the timestamps or to inject silence / cut out audio to make it match the timestamps)
+#
+# note: sample rate is the number of samples of audio carried per second (measured in HZ)
+#  you can see this when you do `ffmpeg -i <video_file>`
 
+# view the time_base of files: (this is important):
+#  https://video.stackexchange.com/a/19238
+#   ls *.mov | xargs -L 1 ffprobe -select_streams a -show_entries stream=time_base -of compact=p=0 2>/dev/null| grep -i "time_base"
+# 
+# what is a timebase? https://stackoverflow.com/a/43337235
+#   (a defined unit of time to serve as a unit representing one tick of a clock)
+#   PTS (Presentation Time Stamps) are denominated in terms of this timebase.
+#   "tbn" (in ffmpeg readout) = Timescale = 1 / timebase
 
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
 OUT_BITRATE="45M"       # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 OUT_SCALE=("1920" "1080")
 OUT_EXT="mov"           # output file extension
 
-LOG_FILE="tmp-ffmpeg-log.txt"
-OUT_LIST="tmp-combine-list.txt"
-OUT_COMBINED="out-combined.mov"
+FOLDER=/tmp/converted_vids
+LOG_FILE="$FOLDER/tmp-ffmpeg-log.txt"
+OUT_LIST="$FOLDER/tmp-combine-list.txt"
+OUT_COMBINED="$FOLDER/out-combined.mov"
 
 function process_config() {
     CONFIG_FILE="$1"
-    rm -rf /tmp/converted_vids && mkdir -p /tmp/converted_vids
+    rm -rf $FOLDER && mkdir -p $FOLDER
     rm -f $LOG_FILE $OUT_LIST $OUT_COMBINED
 
     if [ "$#" -ne 1 ]; then
@@ -29,9 +52,14 @@ function process_config() {
     echo "ffmpeg progress will be logged to: ${LOG_FILE}" && echo ""
 
     echo "current line:"
+    skipCount=0
     # iterate over lines in $config_file
     while IFS= read -r line
     do
+        if [[ "$line" == \#* ]]; then
+            skipCount=$((skipCount+1))
+            continue
+        fi
         echo "  >>> $line"
         # parse values from line:
         IFS=',' read -ra ARR <<< "$line"
@@ -46,13 +74,19 @@ function process_config() {
         # TODO: maybe use existing path/filename but prepend "CONV--"
         # https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
         # https://stackoverflow.com/a/14892459
-        newfile="$(mktemp -u --tmpdir=/tmp/converted_vids).${OUT_EXT}" && rm -f $newfile
+        newfile="$(mktemp -u --tmpdir=$FOLDER).${OUT_EXT}" && rm -f $newfile
 
         ###
         # flags for conversion (must store these in an array!) https://stackoverflow.com/a/29175560
+        # TODO: ensure both audio channels are preserved (Left/right) (remember the issue from last time)
         CONV_FLAGS=(
             -c:a pcm_s16le
-            -af "aresample=async=1024"
+            -async 25
+            #-af "aresample=async"
+            #-af "apad"
+            #-shortest
+            #-avoid_negative_ts make_zero
+            #-fflags +genpts
             -c:v dnxhd
             -b:v $OUT_BITRATE
             # (last flag must be the value for -vf)
@@ -68,7 +102,7 @@ function process_config() {
 
         # print command to log and re-encode:
         echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -y -i $fname ${flags[@]} ${newfile} < /dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
-        ffmpeg -hide_banner -y -i $fname ${flags[@]} ${newfile} </dev/null >>${LOG_FILE} 2>&1
+        ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} </dev/null #>>${LOG_FILE} 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1
@@ -87,8 +121,14 @@ function process_config() {
         ##########
     done < "$CONFIG_FILE"
 
-    echo "" && echo "*****************:" && echo "list to combine outputted to: $OUT_LIST"
-    echo "  combining videos..." && echo ""
+    echo "" && echo "*****************:"
+    if [ "$skipCount" -gt "0" ]; then
+        echo "Note: skipped $skipCount commented lines in \"$CONFIG_FILE\""
+    fi
+    echo "List to combine outputted to: $OUT_LIST"
+    echo "*****************:"
+
+    echo "" && echo "Combining videos... in $OUT_LIST" && echo ""
     #ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy -af "aresample=async=1024" $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
     ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
 

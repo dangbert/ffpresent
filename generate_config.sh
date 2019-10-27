@@ -27,9 +27,14 @@ function generate_config() {
         exit 1
     fi
 
+    skipCount=0
     # iterate over file names in $LIST_FILE
     while IFS= read -r fname
     do
+        if [[ "$fname" == \#* ]]; then
+            skipCount=$((skipCount+1))
+            continue
+        fi
         #echo "fname=$fname"
         rot="$(get_rot $fname)"
         res="$(get_res $fname)"
@@ -41,9 +46,13 @@ function generate_config() {
         echo "$fname,$rot,$width,$height" >> $TMP_FILE
     done < "$LIST_FILE"
 
+    if [ "$skipCount" -gt "0" ]; then
+        echo "Note: skipped $skipCount commented lines in \"$LIST_FILE\""
+    fi
+
     # combine into one video
     #ffmpeg -f concat -safe 0 -i $TMP_FILE -c copy output.mp4
-    echo "created: $TMP_FILE"
+    echo "" && echo "Created: \"$TMP_FILE\""
 }
 
 # returns "" if given video is already horizontal
