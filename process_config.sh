@@ -34,6 +34,7 @@ OUT_SCALE=("1920" "1080")
 OUT_EXT="mov"           # output file extension
 
 FOLDER=/tmp/converted_vids
+#FOLDER=./NOW
 LOG_FILE="$FOLDER/tmp-ffmpeg-log.txt"
 OUT_LIST="$FOLDER/tmp-combine-list.txt"
 OUT_COMBINED="$FOLDER/out-combined.mov"
@@ -86,11 +87,12 @@ function process_config() {
             #-af "apad"
             #-shortest
             #-avoid_negative_ts make_zero
+            #-video_track_timescale 600
             #-fflags +genpts
             -c:v dnxhd
             -b:v $OUT_BITRATE
             # (last flag must be the value for -vf)
-            -vf 'scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
+            -vf 'settb=expr=1/125,scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
         )
         flags=("${CONV_FLAGS[@]}")              # copy array of flags
         ###
@@ -107,7 +109,8 @@ function process_config() {
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1
         fi
-        echo "file $newfile" >> $OUT_LIST
+        # store the absolute path to this file in $OUT_LIST
+        echo "file `realpath $newfile`" >> $OUT_LIST
         # TODO: also preserve metadata from original file (date created, etc)?
 
         ##########
@@ -121,16 +124,16 @@ function process_config() {
         ##########
     done < "$CONFIG_FILE"
 
-    echo "" && echo "*****************:"
+    echo "" && echo "*****************:" && echo "Finished re-encoding videos!"
     if [ "$skipCount" -gt "0" ]; then
         echo "Note: skipped $skipCount commented lines in \"$CONFIG_FILE\""
     fi
-    echo "List to combine outputted to: $OUT_LIST"
+    echo "List of videos to concatenate outputted to: $OUT_LIST"
     echo "*****************:"
 
     echo "" && echo "Combining videos... in $OUT_LIST" && echo ""
     #ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy -af "aresample=async=1024" $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
-    ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
+    ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy -video_track_timescale 29971 $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
 
     if [ "$?" -ne "0" ]; then
         echo "  ERROR: (exit code $?) combining videos: $fname"
