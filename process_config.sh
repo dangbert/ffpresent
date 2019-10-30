@@ -27,14 +27,18 @@
 #   (a defined unit of time to serve as a unit representing one tick of a clock)
 #   PTS (Presentation Time Stamps) are denominated in terms of this timebase.
 #   "tbn" (in ffmpeg readout) = Timescale = 1 / timebase
+#
+# TODO: https://ffmpeg.org/ffmpeg-filters.html#concat
+#       https://stackoverflow.com/questions/47050033/ffmpeg-join-two-movies-with-different-timebase
+#       https://github.com/leandromoreira/ffmpeg-libav-tutorial#learn-ffmpeg-libav-the-hard-way
 
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
 OUT_BITRATE="45M"       # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 OUT_SCALE=("1920" "1080")
 OUT_EXT="mov"           # output file extension
 
-FOLDER=/tmp/converted_vids
-#FOLDER=./NOW
+FOLDER=/tmp/converted_vids  # folder for storing intermediary .mov outputs
+FOLDER_MKV=/tmp/mkv  # folder for storing intermediary .mkv outputs
 LOG_FILE="$FOLDER/tmp-ffmpeg-log.txt"
 OUT_LIST="$FOLDER/tmp-combine-list.txt"
 OUT_COMBINED="$FOLDER/out-combined.mov"
@@ -42,6 +46,7 @@ OUT_COMBINED="$FOLDER/out-combined.mov"
 function process_config() {
     CONFIG_FILE="$1"
     rm -rf $FOLDER && mkdir -p $FOLDER
+    rm -rf $FOLDER_MKV && mkdir -p $FOLDER_MKV
     rm -f $LOG_FILE $OUT_LIST $OUT_COMBINED
 
     if [ "$#" -ne 1 ]; then
@@ -71,28 +76,45 @@ function process_config() {
         fi
         fname=${ARR[0]}; rot=${ARR[1]}; width=${ARR[2]}; height=${ARR[3]}
 
+        ############################################################################################
+        # temporarily convert video to mkv to force timebase=1000
+        #  (beacause all videos must have the same timebase later when we concat):
+        #  (and none of the flags for changing timembase or timescale seemed to work for me)
+        tmpfile="$(mktemp -u --tmpdir=$FOLDER_MKV).mkv" && rm -f $tmpfile
+        echo "" && echo "  starting tmpfile=$tmpfile"
+        ffmpeg -loglevel warning -i $fname -b:v 15M -r 30 $tmpfile </dev/null >>${LOG_FILE} 2>&1
+        # update fname to the new file that should be converted to .mov
+        fname=$tmpfile
+        # TODO: note that once these are converted back to mov the time_base doesn't seem to change
+        ############################################################################################
+
+        ###
         # generate filename:
         # TODO: maybe use existing path/filename but prepend "CONV--"
         # https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
         # https://stackoverflow.com/a/14892459
         newfile="$(mktemp -u --tmpdir=$FOLDER).${OUT_EXT}" && rm -f $newfile
-
         ###
         # flags for conversion (must store these in an array!) https://stackoverflow.com/a/29175560
         # TODO: ensure both audio channels are preserved (Left/right) (remember the issue from last time)
         CONV_FLAGS=(
             -c:a pcm_s16le
-            -async 25
+            #-async 25
             #-af "aresample=async"
             #-af "apad"
+            #-af "asettb=expr=1/48000"
             #-shortest
             #-avoid_negative_ts make_zero
             #-video_track_timescale 600
             #-fflags +genpts
             -c:v dnxhd
+            #-enc_time_base 1:1111
+            #-video_track_timescale 1111
             -b:v $OUT_BITRATE
+            -copytb 1
             # (last flag must be the value for -vf)
-            -vf 'settb=expr=1/125,scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
+            #-vf 'settb=expr=1/30000,scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
+            -vf 'scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
         )
         flags=("${CONV_FLAGS[@]}")              # copy array of flags
         ###
@@ -103,8 +125,8 @@ function process_config() {
         fi
 
         # print command to log and re-encode:
-        echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -y -i $fname ${flags[@]} ${newfile} < /dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
-        ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} </dev/null #>>${LOG_FILE} 2>&1
+        echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} < /dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
+        ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} </dev/null >>${LOG_FILE} 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1
@@ -133,10 +155,10 @@ function process_config() {
 
     echo "" && echo "Combining videos... in $OUT_LIST" && echo ""
     #ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy -af "aresample=async=1024" $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
-    ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy -video_track_timescale 29971 $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
+    ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy  $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
 
     if [ "$?" -ne "0" ]; then
-        echo "  ERROR: (exit code $?) combining videos: $fname"
+        echo "  ERROR: (exit code $?) combining videos"
         exit 1
     fi
     echo "  combined video generated: $OUT_COMBINED"
