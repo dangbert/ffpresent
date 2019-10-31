@@ -7,9 +7,6 @@
 # get help with a filter (e.g. apad):
 #  ffmpeg -h filter=apad
 #
-# TODO: ensure both channels of audio are included (they weren't for the mexico video...)
-# TODO: make all my ffmpeg code on repo on github (and share it online, blog, etc later)
-# 
 # useful filters to consider in future:
 #   (https://ffmpeg.org/ffmpeg-filters.html)
 #   afade (apply fad-in/out effect to input audio)
@@ -76,18 +73,6 @@ function process_config() {
         fi
         fname=${ARR[0]}; rot=${ARR[1]}; width=${ARR[2]}; height=${ARR[3]}
 
-        ############################################################################################
-        # temporarily convert video to mkv to force timebase=1000
-        #  (beacause all videos must have the same timebase later when we concat):
-        #  (and none of the flags for changing timembase or timescale seemed to work for me)
-        tmpfile="$(mktemp -u --tmpdir=$FOLDER_MKV).mkv" && rm -f $tmpfile
-        echo "" && echo "  starting tmpfile=$tmpfile"
-        ffmpeg -loglevel warning -i $fname -b:v 15M -r 30 $tmpfile </dev/null >>${LOG_FILE} 2>&1
-        # update fname to the new file that should be converted to .mov
-        fname=$tmpfile
-        # TODO: note that once these are converted back to mov the time_base doesn't seem to change
-        ############################################################################################
-
         ###
         # generate filename:
         # TODO: maybe use existing path/filename but prepend "CONV--"
@@ -106,18 +91,16 @@ function process_config() {
             #-shortest
             #-avoid_negative_ts make_zero
             #-video_track_timescale 600
-            #-fflags +genpts
+            -fflags +genpts
             -c:v dnxhd
-            #-enc_time_base 1:1111
-            #-video_track_timescale 1111
             -b:v $OUT_BITRATE
-            -copytb 1
-            # (last flag must be the value for -vf)
-            #-vf 'settb=expr=1/30000,scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
-            -vf 'scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
+            -ar 48000 # set the audio sampling frequency
+            # important! videos must either be all stereo or all mono before concat:
+            -ac 2 # force all videos to have ecactly two audio channels
+            # (last flag must be the value for -vf):
+            -vf 'settb=expr=1/30000,scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
         )
         flags=("${CONV_FLAGS[@]}")              # copy array of flags
-        ###
 
         # check if video is vertical (set flags to rotate and add black bars during re-encoding):
         if ! [ -z "$rot" ] || [ "$height" -gt "$width" ]; then
@@ -125,7 +108,7 @@ function process_config() {
         fi
 
         # print command to log and re-encode:
-        echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} < /dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
+        echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} </dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
         ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} </dev/null >>${LOG_FILE} 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
@@ -154,8 +137,8 @@ function process_config() {
     echo "*****************:"
 
     echo "" && echo "Combining videos... in $OUT_LIST" && echo ""
-    #ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy -af "aresample=async=1024" $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
-    ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy  $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
+    echo "">>${LOG_FILE} && echo "ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
+    ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
 
     if [ "$?" -ne "0" ]; then
         echo "  ERROR: (exit code $?) combining videos"
