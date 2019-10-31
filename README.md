@@ -1,23 +1,5 @@
 # FFMPEG Tools for Combining a List of Videos Together
 
-### Useful Commands to run first:
-* get list of all file extensions inside a folder: [reference](https://stackoverflow.com/a/4998326)
-````bash
-find . -type f -name '*.*' | sed 's|.*\.||' | sort -u
-````
-
-* list all files in order by date:
-````bash
-find -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n | cut -d',' -f 2
-````
-
-* get all files matching a list of extensions: [reference](https://stackoverflow.com/a/2622857)
-````bash
-find /path/to -type f -regex ".*\.\(jpg\|gif\|png\|jpeg\)"
-````
-
-
----
 ### How to combine videos (using the scripts):
 1. Create file `list.txt` where each line contains a single filename:
 ````bash
@@ -64,3 +46,20 @@ find /path/to -type f -regex ".*\.\(jpg\|gif\|png\|jpeg\)"
   * adjust audio to max during for image portions
   * and use an optional flag in the video config file to specify if the audio there is "important" (so it knows to lower the music to say 20% audio there)
     * (and blend the volume changes in audio during transitions)
+
+---
+### Useful Commands to know:
+* get list of all file extensions inside a folder: [reference](https://stackoverflow.com/a/4998326)
+````bash
+find . -type f -name '*.*' | sed 's|.*\.||' | sort -u
+````
+
+* list all files in order by date:
+````bash
+find -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n | cut -d',' -f 2
+````
+
+* get all files matching a list of extensions: [reference](https://stackoverflow.com/a/2622857)
+````bash
+find /path/to -type f -regex ".*\.\(jpg\|gif\|png\|jpeg\)"
+````
