@@ -120,7 +120,7 @@ function process_config() {
             echo "  $CMD" && echo "" && exit 1
         fi
         # store the absolute path to this file in "$OUT_LIST"
-        echo "file `realpath "$newfile"`" >> "$OUT_LIST"
+        echo "file \'`realpath "$newfile"`\'" >> "$OUT_LIST"
         # TODO: also preserve metadata from original file (date created, etc)?
 
         ##########
