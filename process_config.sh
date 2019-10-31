@@ -67,6 +67,7 @@ function process_config() {
             skipCount=$((skipCount+1))
             continue
         fi
+        # TODO: consider adding something like: "  (line 3 of 201)"
         echo "  >>> $line"
         # parse values from line:
         IFS=',' read -ra ARR <<< "$line"
@@ -112,14 +113,14 @@ function process_config() {
         fi
 
         # print command to log and re-encode:
-        echo "" >>"${LOG_FILE}" && echo "ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} ${newfile} </dev/null >>\"${LOG_FILE}\" 2>&1" >>"${LOG_FILE}"
-        ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} ${newfile} </dev/null >>"${LOG_FILE}" 2>&1
+        echo "" >>"${LOG_FILE}" && echo "ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} \"${newfile}\" </dev/null >>\"${LOG_FILE}\" 2>&1" >>"${LOG_FILE}"
+        ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} "${newfile}" </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1
         fi
         # store the absolute path to this file in "$OUT_LIST"
-        echo "file `realpath $newfile`" >> "$OUT_LIST"
+        echo "file `realpath "$newfile"`" >> "$OUT_LIST"
         # TODO: also preserve metadata from original file (date created, etc)?
 
         ##########
