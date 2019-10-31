@@ -28,31 +28,35 @@
 # TODO: https://ffmpeg.org/ffmpeg-filters.html#concat
 #       https://stackoverflow.com/questions/47050033/ffmpeg-join-two-movies-with-different-timebase
 #       https://github.com/leandromoreira/ffmpeg-libav-tutorial#learn-ffmpeg-libav-the-hard-way
-
+#
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
-OUT_BITRATE="45M"       # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
-OUT_SCALE=("1920" "1080")
-OUT_EXT="mov"           # output file extension
-
-FOLDER=/tmp/converted_vids  # folder for storing intermediary .mov outputs
-FOLDER_MKV=/tmp/mkv  # folder for storing intermediary .mkv outputs
-LOG_FILE="$FOLDER/tmp-ffmpeg-log.txt"
-OUT_LIST="$FOLDER/tmp-combine-list.txt"
-OUT_COMBINED="$FOLDER/out-combined.mov"
+OUT_BITRATE="45M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
+OUT_SCALE=("1920" "1080")  # output resoulution
+OUT_EXT="mov"              # output file extension (don't change this)
 
 function process_config() {
-    CONFIG_FILE="$1"
-    rm -rf $FOLDER && mkdir -p $FOLDER
-    rm -rf $FOLDER_MKV && mkdir -p $FOLDER_MKV
-    rm -f $LOG_FILE $OUT_LIST $OUT_COMBINED
-
-    if [ "$#" -ne 1 ]; then
-        echo "ERROR expected 1 arg, received: $#"
+    if [ "$#" -ne 2 ]; then
+        echo "ERROR expected 2 args, received: $#"
         echo "USAGE:"
-        echo "  ./process_config.sh config.txt"
+        echo "  ./process_config.sh <config_file> <output_folder>"
+        echo "  EXAMPLE: ./process_config.sh list-detailed.txt /tmp"
         exit 1
     fi
-    echo "ffmpeg progress will be logged to: ${LOG_FILE}" && echo ""
+
+    CONFIG_FILE="$1"
+    FOLDER="$2/combined_output"
+    FOLDER_MOVS="$FOLDER/intermediary" # folder to store converted mov files
+    LOG_FILE="$FOLDER/tmp-ffmpeg-log.txt"
+    OUT_LIST="$FOLDER/list-combine.txt"
+    OUT_COMBINED="$FOLDER/out-combined.mov"
+
+    if [ -d "$FOLDER" ]; then
+        echo "output folder \"$FOLDER\" already exists. Delete and try again."
+        exit 1
+    fi
+    echo "All outputs will be saved in: \"${FOLDER}\"..."
+    mkdir -p "$FOLDER" && mkdir -p "$FOLDER_MOVS"
+    echo "ffmpeg progress will be logged to: \"${LOG_FILE}\"..." && echo ""
 
     echo "current line:"
     skipCount=0
@@ -71,17 +75,17 @@ function process_config() {
             echo "ERROR: found $count occurences of delimter (expected 3)."
             exit 1
         fi
-        fname=${ARR[0]}; rot=${ARR[1]}; width=${ARR[2]}; height=${ARR[3]}
+        fname="${ARR[0]}"; rot="${ARR[1]}"; width="${ARR[2]}"; height="${ARR[3]}"
 
         ###
-        # generate filename:
-        # TODO: maybe use existing path/filename but prepend "CONV--"
-        # https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
-        # https://stackoverflow.com/a/14892459
-        newfile="$(mktemp -u --tmpdir=$FOLDER).${OUT_EXT}" && rm -f $newfile
+        # generate filename (doesn't create file):
+        #   TODO: TODO: TODO: maybe use existing path/filename but prepend "CONV--"
+        #   or create a new folder and put all the new files in with the same hierachy as before
+        #   https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
+        #   https://stackoverflow.com/a/14892459
+        newfile="$(mktemp -u --tmpdir="$FOLDER_MOVS").${OUT_EXT}"
         ###
-        # flags for conversion (must store these in an array!) https://stackoverflow.com/a/29175560
-        # TODO: ensure both audio channels are preserved (Left/right) (remember the issue from last time)
+        # flags for conversion: (must store these in an array!) https://stackoverflow.com/a/29175560
         CONV_FLAGS=(
             -c:a pcm_s16le
             #-async 25
@@ -108,14 +112,14 @@ function process_config() {
         fi
 
         # print command to log and re-encode:
-        echo "">>${LOG_FILE} && echo "ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} </dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
-        ffmpeg -hide_banner -loglevel warning -y -i $fname ${flags[@]} ${newfile} </dev/null >>${LOG_FILE} 2>&1
+        echo "" >>"${LOG_FILE}" && echo "ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} ${newfile} </dev/null >>\"${LOG_FILE}\" 2>&1" >>"${LOG_FILE}"
+        ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} ${newfile} </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1
         fi
-        # store the absolute path to this file in $OUT_LIST
-        echo "file `realpath $newfile`" >> $OUT_LIST
+        # store the absolute path to this file in "$OUT_LIST"
+        echo "file `realpath $newfile`" >> "$OUT_LIST"
         # TODO: also preserve metadata from original file (date created, etc)?
 
         ##########
@@ -133,18 +137,21 @@ function process_config() {
     if [ "$skipCount" -gt "0" ]; then
         echo "Note: skipped $skipCount commented lines in \"$CONFIG_FILE\""
     fi
-    echo "List of videos to concatenate outputted to: $OUT_LIST"
+    echo "List of videos used to concatenate outputted to: \"$OUT_LIST\""
     echo "*****************:"
 
-    echo "" && echo "Combining videos... in $OUT_LIST" && echo ""
-    echo "">>${LOG_FILE} && echo "ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1" >>${LOG_FILE}
-    ffmpeg -f concat -y -safe 0 -i $OUT_LIST -c copy $OUT_COMBINED </dev/null >>${LOG_FILE} 2>&1
+    # concatenate videos into one:
+    #  (keep in mind that for this step it is critical that all videos being combined
+    #    are the exact same encoding, number of audio streams, etc)
+    echo "" && echo "Combining videos... in \"$OUT_LIST\"" && echo ""
+    echo "" >>"${LOG_FILE}" && echo "ffmpeg -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy \"$OUT_COMBINED\" </dev/null >>\"${LOG_FILE}\" 2>&1" >>"${LOG_FILE}"
+    ffmpeg -f concat -y -safe 0 -i "$OUT_LIST" -c copy "$OUT_COMBINED" </dev/null >>"${LOG_FILE}" 2>&1
 
     if [ "$?" -ne "0" ]; then
         echo "  ERROR: (exit code $?) combining videos"
         exit 1
     fi
-    echo "  combined video generated: $OUT_COMBINED"
+    echo "  combined video generated: \"$OUT_COMBINED\""
 }
 
 process_config "$@"
