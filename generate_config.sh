@@ -8,6 +8,10 @@
 #       (and maybe also remove whitespace, skip line if the substring is empty, etc)
 # TODO: consider putting "# date generated: ..." at the top of the outputted files, etc
 #       (and perhaps list the command that was used to create it)
+#
+#
+# TODO: consider just outputting the detailed list and skipping the list.txt step...
+# TODO: put the planned rotation int the list-detailed.txt?
 
 OUT_FILE=list-detailed.txt
 # outputs a text file with the metadata about each file to be combined
@@ -51,16 +55,17 @@ function generate_config() {
 function get_rot() {
     FNAME="$1" # name of file to check
     # get angle that video needs to be rotated ("" if already horizontal)
-    rot=`ffprobe -loglevel error -select_streams v:0 -show_entries stream_tags=rotate -of default=nw=1:nk=1 -i "$FNAME"`
-
+    rot=`ffprobe -loglevel error -select_streams v:0 -show_entries stream_tags=rotate -of default=nw=1:nk=1 -i "$FNAME" | head -n 1`
     echo $rot
 }
 
 # returns resolution of video "<width>x<height>" (e.g. "1280x720")
+# some videos (like "./3---Grand Canyon/entering_park.MTS")
+# strangely return 2 lines with the result so we pipe to head
 function get_res() {
     FNAME="$1" # name of file to check
     # get angle that video needs to be rotated ("" if already horizontal)
-    val=`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 -i "$FNAME"`
+    val=`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 -i "$FNAME" | head -n 1`
     echo $val
 }
 
@@ -114,23 +119,39 @@ function create_list() {
     echo "copy of list (including dates) outputted to: ${tmp_file}"
 }
 
-#echo "num args = $#"
-# check if $1 == "-l" and call create_list:
-if [ "$1" == "-l" ] && [ "$#" -gt "2" ]; then
-    # TODO: test minimum $# required
-    create_list "$@"
-# otherwise call generate_config():
-elif [ "$1" == "-g" ] && [ "$#" == "2" ]; then
-    generate_config "$@"
-else
-    echo "USAGE:"
+# prints usage
+function usage() {
+    echo -e "\nUSAGE:"
     echo "  1. generate a list of files (ordered by date) by searching a provided folder recusively for desired file extensions)"
-    echo "      ./generate_config -l \"<folder>\" <ext1> <ext2> <ext3> <...>"
-    echo "      EXAMPLE: ./generate_config.sh -l \"/run/media/dan/My Passport/PHOTOS/0.TRIPS/COSTA_CALI-2019/0.Costa_Rica/\" mov MOV mp4"
+    echo "      generate_config -l \"<folder>\" <ext1> <ext2> <ext3> <...>"
+    echo "      EXAMPLE: generate_config.sh -l \"/run/media/dan/My Passport/PHOTOS/0.TRIPS/COSTA_CALI-2019/0.Costa_Rica/\" mov MOV mp4"
     echo ""
 
     echo "  2. process a list of files (one per line) to create the config file \"${OUT_FILE}\" for use with ./process_config.sh"
-    echo "      ./generate_config -g <list_file>"
-    echo "      EXAMPLE: ./generate_config -g list.txt"
+    echo "      generate_config -g <list_file>"
+    echo "      EXAMPLE: generate_config -g list.txt"
+    #if [ "$#" -eq "1" ] && [ "$1" -eq "1"]; then
+    #    exit 1
+    #fi
+}
+
+#echo "num args = $#"
+# check if $1 == "-l" and call create_list:
+if [ "$1" == "-l" ]; then
+    if [ "$#" -eq "2" ]; then
+        usage
+        echo -e "\nList of all filetypes in target folder for reference:"
+        FOLDER="$2" && find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u
+        exit 1
+    elif [ "$#" -gt "2" ]; then
+        # TODO: test minimum $# required
+        create_list "$@"
+    fi
+# otherwise call generate_config():
+elif [ "$1" == "-g" ] && [ "$#" == "2" ]; then
+    generate_config "$@"
+    exit 0
+else
+    usage
     exit 1
 fi
