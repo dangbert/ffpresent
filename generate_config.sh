@@ -36,11 +36,12 @@ function generate_config() {
         #echo "fname=$fname"
         rot="$(get_rot "$fname")"
         res="$(get_res "$fname")"
+        duration="$(get_dur "$fname")"
         width=$(cut -d 'x' -f1 <<< $res)
         height=$(cut -d 'x' -f2 <<< $res)
 
         # add this to OUT_FILE
-        echo "$fname,$rot,$width,$height" >> $OUT_FILE
+        echo "$fname,$rot,$width,$height,$duration" >> $OUT_FILE
     done < "$LIST_FILE"
 
     if [ "$skipCount" -gt "0" ]; then
@@ -56,7 +57,7 @@ function get_rot() {
     FNAME="$1" # name of file to check
     # get angle that video needs to be rotated ("" if already horizontal)
     rot=`ffprobe -loglevel error -select_streams v:0 -show_entries stream_tags=rotate -of default=nw=1:nk=1 -i "$FNAME" | head -n 1`
-    echo $rot
+    echo "$rot"
 }
 
 # returns resolution of video "<width>x<height>" (e.g. "1280x720")
@@ -66,7 +67,14 @@ function get_res() {
     FNAME="$1" # name of file to check
     # get angle that video needs to be rotated ("" if already horizontal)
     val=`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 -i "$FNAME" | head -n 1`
-    echo $val
+    echo "$val"
+}
+
+# returns duration of video in string format "HH:MM:SS"
+function get_dur() {
+    FNAME="$1" # name of file to check
+    val=`ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=s=x:p=0 -i "$FNAME" | head -n 1`
+    echo "$(date -d @"$val" -u +%H:%M:%S)"
 }
 
 # generate list.txt

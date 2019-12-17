@@ -72,11 +72,11 @@ function process_config() {
         # parse values from line:
         IFS=',' read -ra ARR <<< "$line"
         count=$(awk -F"," '{print NF-1}' <<< "${line}")
-        if [ "$count" -ne "3" ]; then
-            echo "ERROR: found $count occurences of delimter (expected 3)."
+        if [ "$count" -ne "4" ]; then
+            echo "ERROR: found $count occurences of delimter (expected 4)."
             exit 1
         fi
-        fname="${ARR[0]}"; rot="${ARR[1]}"; width="${ARR[2]}"; height="${ARR[3]}"
+        fname="${ARR[0]}"; rot="${ARR[1]}"; width="${ARR[2]}"; height="${ARR[3]}"; duration="${ARR[4]}"
 
         ###
         # generate filename (doesn't create file):
