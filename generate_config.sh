@@ -9,46 +9,83 @@
 # TODO: consider putting "# date generated: ..." at the top of the outputted files, etc
 #       (and perhaps list the command that was used to create it)
 #
-#
-# TODO: consider just outputting the detailed list and skipping the list.txt step...
-# TODO: put the planned rotation int the list-detailed.txt?
+# TODO: put the planned rotation in the list-detailed.txt?
 
 OUT_FILE=list-detailed.txt
-# outputs a text file with the metadata about each file to be combined
-# input: $1 (name of file listing filenames seperated by newlines)
-function generate_config() {
-    LIST_FILE="$2"
 
+function menu() {
+    while ! [ -d "$FOLDER" ]; do
+        read -p "Enter source folder path to find videos> " FOLDER
+    done
+
+    echo "List of all extension found in target folder:"
+    find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u
+    # TODO: https://www.commandlinefu.com/commands/view/12759/join-the-content-of-a-bash-array-with-commas
+    echo "****************************************************" && echo ""
+
+    echo -e "\nEnter list of desired extensions separated by commas: (e.g. \"mov,mp4,mts\")"
+    read -p "> " EXTENSIONS
+    IFS=',' read -ra EXT_LIST <<< "$EXTENSIONS"
+
+    echo -e "\nSearching for files with the following extensions:"
+    echo "  ${EXT_LIST[@]}" && echo ""
+
+    create_list "$FOLDER" "${EXT_LIST[@]}"
+}
+
+# generate list.txt (with details about each video on each line)
+# TODO: use proper flag parsing?
+function create_list() {
+    OUT_FILE="list.txt"
     if [ -f "$OUT_FILE" ]; then
-        echo "output file \"$OUT_FILE\" already exists. Delete and try again."
-        exit 1
+        OUT_FILE="$(mktemp -u list.XXXX.txt)"
     fi
+    echo -e "writing results to: \"$OUT_FILE\""
 
-    skipCount=0
-    # iterate over file names in $LIST_FILE
-    echo "Creating: \"$OUT_FILE\"..."
+    # build search_str:
+    FOLDER="$1"
+    EXT_LIST=("${@:2}") # remove first element (the folder path)
+    search_str="" # ".*\.\(mov\|MOV\|mp4\|MP4\)"
+    for i in "${!EXT_LIST[@]}"; do
+        ext="${EXT_LIST[$i]}"
+        if (( i == 0 )); then
+            search_str=".*\.\(${ext}"
+        else
+            search_str="${search_str}\|${ext}"
+        fi
+    done
+    search_str="${search_str}\)"
+    #echo "search_str: $search_str" && echo ""
+
+    # do the search, and order results by date
+    tmp_file="$(mktemp -u --tmpdir=/tmp).txt"
+    tmp_list="$(mktemp -u --tmpdir=/tmp).txt"
+    find "$FOLDER" -type f -regex "${search_str}" -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n  >"$tmp_file"
+    cat "$tmp_file" | cut -d',' -f2 > "$tmp_list"
+    #echo -e "\ncreated temporary file: \"$tmp_list\""
+
+    # iterate over $tmp_list to create a list with more details
     while IFS= read -r fname
     do
-        if [[ "$fname" == \#* ]]; then
-            skipCount=$((skipCount+1))
-            continue
-        fi
-        #echo "fname=$fname"
-        rot="$(get_rot "$fname")"
-        res="$(get_res "$fname")"
-        duration="$(get_dur "$fname")"
-        width=$(cut -d 'x' -f1 <<< $res)
-        height=$(cut -d 'x' -f2 <<< $res)
+        get_all_file_details "$fname" >> "$OUT_FILE"
+    done < "$tmp_list"
+    rm -f "$tmp_list"
 
-        # add this to OUT_FILE
-        echo "$fname,$rot,$width,$height,$duration" >> $OUT_FILE
-    done < "$LIST_FILE"
+    echo "done!"
+    #echo "copy of list (including dates) outputted to: ${tmp_file}"
+}
 
-    if [ "$skipCount" -gt "0" ]; then
-        echo "Note: skipped $skipCount commented line(s) in \"$LIST_FILE\""
-    fi
+# takes the filename "$1" and returns a string containing the details:
+# "file_name,rotation,duration,width,height"
+function get_all_file_details() {
+    fname="$1"
+    rot="$(get_rot "$fname")"
+    res="$(get_res "$fname")"
+    duration="$(get_dur "$fname")"
+    width=$(cut -d 'x' -f1 <<< $res)
+    height=$(cut -d 'x' -f2 <<< $res)
 
-    echo "" && echo "Created: \"$OUT_FILE\""
+    echo "$fname,$rot,$width,$height,$duration"
 }
 
 # returns "" if given video is already horizontal
@@ -76,90 +113,26 @@ function get_dur() {
     val=`ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=s=x:p=0 -i "$FNAME" | head -n 1`
     echo "$(date -d @"$val" -u +%H:%M:%S)"
 }
-
-# generate list.txt
-# TODO: use proper flag parsing?
-# TODO: have this program have text menus with options and prompt you to type the options...
-# but keep the main menu program as a separate file from the rest
-#  (but have a good API for the core funcitonality scripts)
-# also have it use your provided folder to give you a list of filenames within to choose from
-# usage:
-# ./generate_config -l <folder> <ext1> <ext2> <ext3>
-# ./generate_config.sh -l "/run/media/dan/My Passport/PHOTOS/0.TRIPS/COSTA_CALI-2019/0.Costa_Rica/" mov MOV mp4
-function create_list() {
-    OUT_FILE="list.txt"
-    IGNORE_CASE=1 # set to 1 to ignore case when searching file extensions
-
-    #ARGS=( "$@" )
-    FOLDER=$2
-    echo "FOLDER=$FOLDER"
-    EXT_LIST=("${@:3}") # remove first two elements ($1 is "-l")
-
-    if [ -f "$OUT_FILE" ]; then
-        echo "output file \"$OUT_FILE\" already exists. Delete and try again."
-        exit 1
-    fi
-
-    echo "List of all filetypes in target folder for reference:"
-    find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u
-    echo "****************************************************" && echo ""
-    echo "Searching for files with the following extensions:"
-    echo "  ${EXT_LIST[@]}" && echo ""
-
-    #find /path/to/folder -type f -regex ".*\.\(mov\|MOV\|mp4\|MP4\)")
-    search_str="" # ".*\.\(mov\|MOV\|mp4\|MP4\)"
-    for i in "${!EXT_LIST[@]}"; do
-        ext="${EXT_LIST[$i]}"
-        if (( i == 0 )); then
-            search_str=".*\.\(${ext}"
-        else
-            search_str="${search_str}\|${ext}"
-        fi
-    done
-    search_str="${search_str}\)"
-    #echo "search_str: $search_str" && echo ""
-
-    # do the search, and order results by date
-    tmp_file="$(mktemp -u --tmpdir=/tmp).txt"
-    find "$FOLDER" -type f -regex "${search_str}" -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n  >$tmp_file
-    cat "$tmp_file" | cut -d',' -f2 > $OUT_FILE
-    echo "list of matching files outputted to: \"${OUT_FILE}\""
-    echo "copy of list (including dates) outputted to: ${tmp_file}"
-}
-
 # prints usage
 function usage() {
+    echo -e "==========================================================================================================="
+    echo -e "Generates a list of files (ordered by date) by searching a provided folder recusively for desired file extensions."
     echo -e "\nUSAGE:"
-    echo "  1. generate a list of files (ordered by date) by searching a provided folder recusively for desired file extensions)"
-    echo "      generate_config -l \"<folder>\" <ext1> <ext2> <ext3> <...>"
-    echo "      EXAMPLE: generate_config.sh -l \"/run/media/dan/My Passport/PHOTOS/0.TRIPS/COSTA_CALI-2019/0.Costa_Rica/\" mov MOV mp4"
-    echo ""
-
-    echo "  2. process a list of files (one per line) to create the config file \"${OUT_FILE}\" for use with ./process_config.sh"
-    echo "      generate_config -g <list_file>"
-    echo "      EXAMPLE: generate_config -g list.txt"
-    #if [ "$#" -eq "1" ] && [ "$1" -eq "1"]; then
-    #    exit 1
-    #fi
+    echo -e "\tgenerate_config   # when no args are provided you are prompted to type params"
+    echo -e "\tgenerate_config \"<folder>\" <ext1> <ext2> <ext3> <...>"
+    echo -e "EXAMPLE:"
+    echo -e "\tEXAMPLE: generate_config.sh \"~/Downloads/0.Costa_Rica/\" mov MOV mp4"
+    echo -e "===========================================================================================================\n"
 }
 
-#echo "num args = $#"
-# check if $1 == "-l" and call create_list:
-if [ "$1" == "-l" ]; then
-    if [ "$#" -eq "2" ]; then
-        usage
-        echo -e "\nList of all filetypes in target folder for reference:"
-        FOLDER="$2" && find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u
-        exit 1
-    elif [ "$#" -gt "2" ]; then
-        # TODO: test minimum $# required
-        create_list "$@"
-    fi
-# otherwise call generate_config():
-elif [ "$1" == "-g" ] && [ "$#" == "2" ]; then
-    generate_config "$@"
-    exit 0
-else
+if [ "$#" -eq "0" ]; then
     usage
+    menu
+elif [ "$#" -gt "1" ]; then
+    create_list "$@"
+elif [ "$#" == "1" ] && [ -d "$1" ]; then
+    usage
+    echo -e "\nList of all filetypes in target folder for reference:"
+    FOLDER="$1" && find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u
     exit 1
 fi
