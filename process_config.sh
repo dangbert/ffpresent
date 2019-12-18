@@ -28,11 +28,13 @@
 # TODO: https://ffmpeg.org/ffmpeg-filters.html#concat
 #       https://stackoverflow.com/questions/47050033/ffmpeg-join-two-movies-with-different-timebase
 #       https://github.com/leandromoreira/ffmpeg-libav-tutorial#learn-ffmpeg-libav-the-hard-way
+
 #
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
-OUT_BITRATE="45M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
+OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 OUT_SCALE=("1920" "1080")  # output resoulution
 OUT_EXT="mov"              # output file extension (don't change this)
+FFMPEG_THREADS="1"
 
 function process_config() {
     if [ "$#" -ne 2 ]; then
@@ -61,6 +63,8 @@ function process_config() {
     echo "current line:"
     skipCount=0
     # iterate over lines in $config_file
+    # TODO: convert videos in the list in parallel
+    #   https://stackoverflow.com/a/43308733
     while IFS= read -r line
     do
         if [[ "$line" == \#* ]]; then
@@ -80,17 +84,21 @@ function process_config() {
 
         ###
         # generate filename (doesn't create file):
-        #   TODO: TODO: TODO: maybe use existing path/filename but prepend "CONV--"
-        #   or create a new folder and put all the new files in with the same hierachy as before
+        #   TODO: create a new folder and put all the new files in with the same hierachy as before???
         #   https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
         #   https://stackoverflow.com/a/14892459
-        newfile="$(mktemp -u --tmpdir="$FOLDER_MOVS").${OUT_EXT}"
+        #newfile="$(mktemp -u --tmpdir="$FOLDER_MOVS").${OUT_EXT}"
+        newfile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})"
         ###
         # flags for conversion: (must store these in an array!) https://stackoverflow.com/a/29175560
+        # TODO: when the first video in the sequence has no audio (e.g. "timelapse1_leaving_bryce.mp4.ZLGlz.mov")
+        #   it causes the entire combined video to have no audio.
+        #   when a video with audio is placed before it, it causes a huge offset in audio (it still the audio that comes after it)
         CONV_FLAGS=(
+            -threads "$FFMPEG_THREADS"
             -c:a pcm_s16le
+            -af "aresample=async=1024"
             #-async 25
-            #-af "aresample=async"
             #-af "apad"
             #-af "asettb=expr=1/48000"
             #-shortest
@@ -119,9 +127,9 @@ function process_config() {
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1
         fi
-        # store the absolute path to this file in "$OUT_LIST"
-        printf "file \'`realpath "$newfile"`\'" >> "$OUT_LIST"
         # TODO: also preserve metadata from original file (date created, etc)?
+        # store the absolute path to this file in "$OUT_LIST"
+        printf "file \'`realpath "$newfile"`\'\n" >> "$OUT_LIST"
 
         ##########
         # working example for converting all vertical videos to horizontal with padding:
@@ -144,9 +152,10 @@ function process_config() {
     # concatenate videos into one:
     #  (keep in mind that for this step it is critical that all videos being combined
     #    are the exact same encoding, number of audio streams, etc)
-    echo "" && echo "Combining videos... in \"$OUT_LIST\"" && echo ""
-    echo "" >>"${LOG_FILE}" && echo "ffmpeg -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy \"$OUT_COMBINED\" </dev/null >>\"${LOG_FILE}\" 2>&1" >>"${LOG_FILE}"
-    ffmpeg -f concat -y -safe 0 -i "$OUT_LIST" -c copy "$OUT_COMBINED" </dev/null >>"${LOG_FILE}" 2>&1
+    echo -e "\nCombining videos... in \"$OUT_LIST\"\n"
+    echo -e "\n===================\nCommand for combining videos:" >>"${LOG_FILE}"
+    echo -e "ffmpeg -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy \"$OUT_COMBINED\" -threads "$FFMPEG_THREADS" </dev/null >>\"${LOG_FILE}\" 2>&1\n" >>"${LOG_FILE}"
+    ffmpeg -f concat -y -safe 0 -i "$OUT_LIST" -c copy "$OUT_COMBINED" -threads "$FFMPEG_THREADS" </dev/null >>"${LOG_FILE}" 2>&1
 
     if [ "$?" -ne "0" ]; then
         echo "  ERROR: (exit code $?) combining videos"
