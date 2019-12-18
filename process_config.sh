@@ -32,6 +32,7 @@
 #
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
 OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
+AUDIO_FREQ="48000"
 OUT_SCALE=("1920" "1080")  # output resoulution
 OUT_EXT="mov"              # output file extension (don't change this)
 FFMPEG_THREADS="1"
@@ -91,9 +92,21 @@ function process_config() {
         newfile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})"
         ###
         # flags for conversion: (must store these in an array!) https://stackoverflow.com/a/29175560
-        # TODO: when the first video in the sequence has no audio (e.g. "timelapse1_leaving_bryce.mp4.ZLGlz.mov")
-        #   it causes the entire combined video to have no audio.
-        #   when a video with audio is placed before it, it causes a huge offset in audio (it still the audio that comes after it)
+
+        ########
+        # flags to force videos with no audio stream to have a silent audio stream:
+        # (needed for video concat to have the audios line up)
+        SILENT_FIX_FLAGS=(
+            # https://superuser.com/a/1096968
+            #-f lavfi -i aevalsrc=0 -shortest
+            # https://stackoverflow.com/a/12375018
+            -f lavfi -i anullsrc=cl=stereo:r=$AUDIO_FREQ
+        )
+        if [[ ! -z "$(ffprobe -i "$fname" -show_streams -select_streams a -loglevel error)" ]]; then
+            SILENT_FIX_FLAGS=() # don't create empty audio stream if video already has an audio stream
+        fi
+        ########
+
         CONV_FLAGS=(
             -threads "$FFMPEG_THREADS"
             -c:a pcm_s16le
@@ -107,9 +120,10 @@ function process_config() {
             -fflags +genpts
             -c:v dnxhd
             -b:v $OUT_BITRATE
-            -ar 48000 # set the audio sampling frequency
+            -ar $AUDIO_FREQ # set the audio sampling frequency
             # important! videos must either be all stereo or all mono before concat:
-            -ac 2 # force all videos to have ecactly two audio channels
+            -ac 2 # force all videos to have exactly two audio channels
+            -shortest # needed for SILENT_FIX_FLAGS
             # (last flag must be the value for -vf):
             -vf 'settb=expr=1/30000,scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
         )
@@ -120,9 +134,9 @@ function process_config() {
             flags[-1]="scale=-1:${OUT_SCALE[1]},pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:(ow-iw)/2:color=Black,${flags[-1]}"
         fi
 
-        # print command to log and re-encode:
-        echo "" >>"${LOG_FILE}" && echo "ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} \"${newfile}\" </dev/null >>\"${LOG_FILE}\" 2>&1" >>"${LOG_FILE}"
-        ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} "${newfile}" </dev/null >>"${LOG_FILE}" 2>&1
+        # print command to log then re-encode:
+        echo -e "\nffmpeg -hide_banner -loglevel warning -y ${SILENT_FIX_FLAGS[@]} -i "$fname" ${flags[@]} \"${newfile}\" </dev/null"  >>"${LOG_FILE}"
+        ffmpeg -hide_banner -loglevel warning -y ${SILENT_FIX_FLAGS[@]} -i "$fname" ${flags[@]} "${newfile}" </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1

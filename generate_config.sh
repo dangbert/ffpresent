@@ -125,14 +125,14 @@ function usage() {
     echo -e "===========================================================================================================\n"
 }
 
-if [ "$#" -eq "0" ]; then
-    usage
-    menu
-elif [ "$#" -gt "1" ]; then
+if [ "$#" -gt "1" ]; then
     create_list "$@"
 elif [ "$#" == "1" ] && [ -d "$1" ]; then
     usage
     echo -e "\nList of all filetypes in target folder for reference:"
     FOLDER="$1" && find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u
     exit 1
+else
+    usage
+    menu
 fi
