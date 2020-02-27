@@ -34,6 +34,8 @@ OUT_BITRATE="45M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 OUT_SCALE=("1920" "1080")  # output resoulution
 OUT_EXT="mov"              # output file extension (don't change this)
 
+SEARCH_TARGET="/run/media/dan/My Passport/MY_MEDIA/video_editing/grandma_engbert/search-target.jpg"
+
 function main() {
 
     #if [ "$#" -ne 2 ]; then
@@ -50,8 +52,9 @@ function main() {
         # global variables needed by process_config
         CONFIG_FILE="$2"
         FOLDER="$3/combined_output"
-        OUT_LIST="$FOLDER/filtered-list.txt"
+        OUT_LIST="$(dirname "$FOLDER")/filtered-list.txt"
         FOLDER_INT="$FOLDER/intermediary" # folder to store intermediary files (before the video is created)
+        LOG="$(mktemp)"
 
         if [ -f "$OUT_LIST" ] ; then # OUT_LIST already exists
             echo -e "\nWARNING: file '$OUT_LIST' already exists"
@@ -61,11 +64,18 @@ function main() {
             echo ""   # (optional) move to a new line
             if [[ ! $REPLY =~ ^[Yy]$ ]]
             then
-                exit 1
+                read -p "Delete existing file? (y/n): " -n 1 -r
+                echo ""   # (optional) move to a new line
+                if [[ ! $REPLY =~ ^[Yy] ]]; then
+                    exit 1
+                else
+                    rm -f "$OUT_LIST"
+                fi
             fi
         fi
 
         # TODO: call with options manually (no $@)
+        echo "logging to: $LOG"
         interactive_pics "$@"
     else
         # global variables needed by process_config
@@ -130,7 +140,7 @@ function interactive_pics() {
 
         echo -e "current line: '$line'"
 
-        res="$(preview_file '$line')"
+        res="$(preview_file "$line")"
         echo "res='$res'"
         if [ "$res" -ne "1" ]; then
             echo -e "skipping pic"
@@ -184,6 +194,9 @@ function interactive_pics() {
 function preview_file() {
     local fname="$1"   # path to file of interest
     local prompt="$2"  # question prompt
+    local PROG="/home/dan/Downloads/projects/ffmpeg-tools/external/facedetect-master/facedetect"
+    local TARGET="/run/media/dan/My Passport/MY_MEDIA/video_editing/grandma_engbert/source_library/uncle_tom/incomplete--Brawley fam/MVIMG_20190706_192823_1.jpg"
+    local THRESH="60"
 
     # TODO: identify whether fname is an image or video file (or invalid)
     #  (using ffmpeg maybe or some program)
@@ -191,14 +204,36 @@ function preview_file() {
     # for now we will assume it's an image file
     #eog "$fname"
 
-    # TODO: for now I will to use facial recognition to tell if grandma appears in the pictures
+    # TODO: TODO: for now I will to use facial recognition to tell if grandma appears in the pictures
     #   (and still return true or false)
     #    TODO: later make facial recognition a param option to this function (to specifiy automatic vs manual review)
     #echo "at $fname"
 
+    #"$SEARCH_TARGET"
 
+    #"$PROG" "$fname" "$SEARCH_TARGET"
+    #./facedetect  "$fname" --data-dir . -s "" --search-threshold "100"
 
-    echo "1" # TODO: for now
+    echo -e "\nrunning: "$PROG" "$fname" --data-dir "$(dirname "$PROG")" -s "$TARGET" --search-threshold "$THRESH"" >> "$LOG"
+    "$PROG" "$fname" --data-dir "$(dirname "$PROG")" -s "$TARGET" --search-threshold "$THRESH" >> "$LOG"
+
+    local res="$?"
+    #echo "now res='$res'"
+    if [ "$res" == "1" ]; then
+        echo -e "ERROR: facedetector returned with error code ($res)"
+        echo "0"
+        exit
+    fi
+
+    if [ "$res" == "0" ]; then
+        echo "1"
+    else
+        echo "0"
+    fi
+
+    #./facedetect  "/run/media/dan/My Passport/MY_MEDIA/video_editing/grandma_engbert/source_library/uncle_tom/incomplete--Brawley fam/MVIMG_20190706_192823_1.jpg" --data-dir . -s "/run/media/dan/My Passport/MY_MEDIA/video_editing/grandma_engbert/search-target.jpg" --search-threshold "100"
+
+    #echo "1" # TODO: for now
     exit
 
     # I need to search by face if im going to do this
