@@ -9,6 +9,9 @@
 # TODO: consider putting "# date generated: ..." at the top of the outputted files, etc
 #       (and perhaps list the command that was used to create it)
 
+# TODO: give the user the list of extensions while its running so they can choose from them while it's running (if they don't provide any)...
+# TODO: I should be able to run just one command and get an outputted video
+
 OUT_FILE=list-detailed.txt
 # outputs a text file with the metadata about each file to be combined
 # input: $1 (name of file listing filenames seperated by newlines)
@@ -29,6 +32,7 @@ function generate_config() {
             skipCount=$((skipCount+1))
             continue
         fi
+        # TODO: also put the video duration as a field for reference...
         #echo "fname=$fname"
         rot="$(get_rot "$fname")"
         res="$(get_res "$fname")"
@@ -80,6 +84,7 @@ function create_list() {
     #ARGS=( "$@" )
     FOLDER=$2
     echo "FOLDER=$FOLDER"
+    # TODO: allow EXT_LIST to be empty (then just print the folders extensions)
     EXT_LIST=("${@:3}") # remove first two elements ($1 is "-l")
 
     if [ -f "$OUT_FILE" ]; then
@@ -112,21 +117,32 @@ function create_list() {
     cat "$tmp_file" | cut -d',' -f2 > $OUT_FILE
     echo "list of matching files outputted to: \"${OUT_FILE}\""
     echo "copy of list (including dates) outputted to: ${tmp_file}"
+
+    # TODO: also automatically create list-detailed.txt at this point...
 }
 
 #echo "num args = $#"
 # check if $1 == "-l" and call create_list:
 if [ "$1" == "-l" ] && [ "$#" -gt "2" ]; then
-    # TODO: test minimum $# required
+    #^^ # TODO: test minimum $# required
     create_list "$@"
 # otherwise call generate_config():
 elif [ "$1" == "-g" ] && [ "$#" == "2" ]; then
     generate_config "$@"
 else
+    # example filenames (which are the correct ones)
+    res="`find . -type f -name '*.*' | sed 's|.*\.||' | sort -u | tr '\n' ' '`"
+    #if [ "$res" -z ]; then
+    #    res="mov MOV mp4"
+    #    #$2="./" # TODO prevent './~/.dan'
+    #fi
+
     echo "USAGE:"
-    echo "  1. generate a list of files (ordered by date) by searching a provided folder recusively for desired file extensions)"
+    echo "  1. generate a list of files (ordered by date) by searching a provided folder recusively for desired file extensions"
     echo "      ./generate_config -l \"<folder>\" <ext1> <ext2> <ext3> <...>"
-    echo "      EXAMPLE: ./generate_config.sh -l \"/run/media/dan/My Passport/PHOTOS/0.TRIPS/COSTA_CALI-2019/0.Costa_Rica/\" mov MOV mp4"
+    echo "      EXAMPLE: ./generate_config.sh -l '$2' $res"
+    #echo "      EXAMPLE: ./generate_config.sh -l '$2' $(if [ "$res" -z $res) $res"
+    #echo "      EXAMPLE: ./generate_config.sh -l \"/run/media/dan/My Passport/PHOTOS/0.TRIPS/COSTA_CALI-2019/0.Costa_Rica/\" mov MOV mp4"
     echo ""
 
     echo "  2. process a list of files (one per line) to create the config file \"${OUT_FILE}\" for use with ./process_config.sh"
