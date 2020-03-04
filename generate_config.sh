@@ -114,7 +114,8 @@ function create_list() {
     # do the search, and order results by date
     tmp_file="$(mktemp -u --tmpdir=/tmp).txt"
     find "$FOLDER" -type f -regex "${search_str}" -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n  >$tmp_file
-    cat "$tmp_file" | cut -d',' -f2 > $OUT_FILE
+    #cat "$tmp_file" | cut -d',' -f2 > $OUT_FILE # local path
+    cat "$tmp_file" | cut -d',' -f2 | xargs -L 1 -I@ bash -c "realpath \"@\"" > $OUT_FILE # absolute path
     echo "list of matching files outputted to: \"${OUT_FILE}\""
     echo "copy of list (including dates) outputted to: ${tmp_file}"
 

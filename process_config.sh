@@ -30,7 +30,7 @@
 #       https://github.com/leandromoreira/ffmpeg-libav-tutorial#learn-ffmpeg-libav-the-hard-way
 #
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
-OUT_BITRATE="45M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
+OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 OUT_SCALE=("1920" "1080")  # output resoulution
 OUT_EXT="mov"              # output file extension (don't change this)
 
@@ -210,7 +210,12 @@ function preview_file() {
     #echo "at $fname"
 
     #"$SEARCH_TARGET"
+    ############ latest method: ##################
+    PROG="/home/dan/Downloads/projects/ffmpeg-tools/external/face_recognition/my_searcher.py"
+    "$PROG" "$fname" --data-dir "$(dirname "$PROG")" -s "$TARGET" --search-threshold "$THRESH" >> "$LOG"
 
+
+    ############ method 1: ##################
     #"$PROG" "$fname" "$SEARCH_TARGET"
     #./facedetect  "$fname" --data-dir . -s "" --search-threshold "100"
 
@@ -301,7 +306,9 @@ function process_config() {
         newfile="$(mktemp -u --tmpdir="$FOLDER_MOVS").${OUT_EXT}"
         ###
         # flags for conversion: (must store these in an array!) https://stackoverflow.com/a/29175560
+
         CONV_FLAGS=(
+            -t 5   # for images make them into videos of this number of seconds each
             -c:a pcm_s16le
             #-async 25
             #-af "aresample=async"
@@ -321,10 +328,10 @@ function process_config() {
         )
 
         # debug with text overlay:
-        ${flags[-1]}="${flags[-1]},\
-        drawtext=\"fontfile=/home/dan/.gimp-2.8/fonts/Dangbert.ttf: \
-text='Stack Overflow': fontcolor=white: fontsize=24: box=1: boxcolor=black: \
-x=(w-text_w)/2:y=h-th\""
+        #${flags[-1]}="${flags[-1]},\
+        #drawtext=\"fontfile=/home/dan/.gimp-2.8/fonts/Dangbert.ttf: \
+#text='Stack Overflow': fontcolor=white: fontsize=24: box=1: boxcolor=black: \
+#x=(w-text_w)/2:y=h-th\""
 
         flags=("${CONV_FLAGS[@]}")              # copy array of flags
 
@@ -335,14 +342,18 @@ x=(w-text_w)/2:y=h-th\""
 
         # print command to log and re-encode:
         echo "" >>"${LOG_FILE}" && echo "ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} \"${newfile}\" </dev/null >>\"${LOG_FILE}\" 2>&1" >>"${LOG_FILE}"
-        ffmpeg -hide_banner -loglevel warning -y -i "$fname" ${flags[@]} "${newfile}" </dev/null >>"${LOG_FILE}" 2>&1
+        # loop 1 is for images (seems like it has to be one of the first flags...)
+        # TODO: get this to work for images and videos interleaved...
+        # image to video based on https://stackoverflow.com/a/25895709
+
+        ffmpeg -hide_banner -loglevel warning -y -loop 1 -i "$fname" ${flags[@]} "${newfile}" </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
             echo "  $CMD" && echo "" && exit 1
         fi
         # store the absolute path to this file in "$OUT_LIST"
         # TODO: the \' is not working (try again with the -e below)
-        echo -e "file \'`realpath "$newfile"`\'" >> "$OUT_LIST"
+        echo -e "file '`realpath "$newfile"`'" >> "$OUT_LIST"
         # TODO: also preserve metadata from original file (date created, etc)?
 
         ##########
