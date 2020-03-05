@@ -18,14 +18,20 @@ OUT_FILE=list-detailed.txt
 function generate_config() {
     LIST_FILE="$2"
 
-    if [ -f "$OUT_FILE" ]; then
-        echo "output file \"$OUT_FILE\" already exists. Delete and try again."
-        exit 1
+    if [ -f "$OUT_FILE" ] ; then # OUT_LIST already exists
+        echo -e "WARNING: output file already exists: '$OUT_FILE'"
+        read -p "delete existing file (y/n)? " -n 1 -r
+        echo ""   # (optional) move to a new line
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+        rm -f "$OUT_FILE"
     fi
 
     skipCount=0
     # iterate over file names in $LIST_FILE
     echo "Creating: \"$OUT_FILE\"..."
+    echo -e "#fname,rot,width,height,fileType" >> $OUT_FILE
     while IFS= read -r fname
     do
         if [[ "$fname" == \#* ]]; then
@@ -38,9 +44,10 @@ function generate_config() {
         res="$(get_res "$fname")"
         width=$(cut -d 'x' -f1 <<< $res)
         height=$(cut -d 'x' -f2 <<< $res)
+        fileType="$(get_type "$fname")"
 
         # add this to OUT_FILE
-        echo "$fname,$rot,$width,$height" >> $OUT_FILE
+        echo "$fname,$rot,$width,$height,$fileType" >> $OUT_FILE
     done < "$LIST_FILE"
 
     if [ "$skipCount" -gt "0" ]; then
@@ -55,8 +62,7 @@ function generate_config() {
 function get_rot() {
     FNAME="$1" # name of file to check
     # get angle that video needs to be rotated ("" if already horizontal)
-    rot=`ffprobe -loglevel error -select_streams v:0 -show_entries stream_tags=rotate -of default=nw=1:nk=1 -i "$FNAME"`
-
+    rot=`ffprobe -loglevel error -select_streams v:0 -show_entries stream_tags=rotate -of default=nw=1:nk=1 -i "$FNAME" 2>/dev/null`
     echo $rot
 }
 
@@ -64,8 +70,20 @@ function get_rot() {
 function get_res() {
     FNAME="$1" # name of file to check
     # get angle that video needs to be rotated ("" if already horizontal)
-    val=`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 -i "$FNAME"`
+    val=`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 -i "$FNAME" 2>/dev/null`
     echo $val
+}
+
+# returns "image" for images, "video" otherwise
+# https://superuser.com/a/1338791
+# TODO: for now assume anything else is a video (later support audio perhaps)
+function get_type() {
+    local out="$(ffprobe -v error -select_streams v -show_entries format=format_name -of default=nokey=1:noprint_wrappers=1 "$1" 2>/dev/null)"
+    if [[ "$out" == "image2" ]]; then
+        echo "image"
+    else
+        echo "video"
+    fi
 }
 
 # generate list.txt
@@ -79,18 +97,22 @@ function get_res() {
 # ./generate_config.sh -l "/run/media/dan/My Passport/PHOTOS/0.TRIPS/COSTA_CALI-2019/0.Costa_Rica/" mov MOV mp4
 function create_list() {
     OUT_FILE="list.txt"
-    IGNORE_CASE=1 # set to 1 to ignore case when searching file extensions
+    if [ -f "$OUT_FILE" ] ; then # OUT_LIST already exists
+        echo -e "WARNING: ouput file already exists: '$OUT_FILE'"
+        read -p "delete existing file (y/n)? " -n 1 -r
+        echo ""   # (optional) move to a new line
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+        rm -f "$OUT_FILE"
+    fi
 
+    IGNORE_CASE=1 # set to 1 to ignore case when searching file extensions
     #ARGS=( "$@" )
     FOLDER=$2
     echo "FOLDER=$FOLDER"
     # TODO: allow EXT_LIST to be empty (then just print the folders extensions)
     EXT_LIST=("${@:3}") # remove first two elements ($1 is "-l")
-
-    if [ -f "$OUT_FILE" ]; then
-        echo "output file \"$OUT_FILE\" already exists. Delete and try again."
-        exit 1
-    fi
 
     echo "List of all filetypes in target folder for reference:"
     find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u
