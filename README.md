@@ -63,3 +63,17 @@ find -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n | cut -d',' -f 2
 ````bash
 find /path/to -type f -regex ".*\.\(jpg\|gif\|png\|jpeg\)"
 ````
+
+---
+### How the video rotation works:
+
+````bash
+##########
+# working example for converting all vertical videos to horizontal with padding:
+#   ffmpeg -hide_banner -y -i iphone/VER_2.MOV -c:v dnxhd -vf "scale=-1:1080,pad=1920:1080:(ow-iw)/2:color=AliceBlue,fps=30000/1001,format=yuv422p" -b:v 45M -c:a pcm_s16le /tmp/converted_vids/iphone_ver2.mov
+##########
+````
+* [filtergraph defined](http://ffmpeg.org/ffmpeg-filters.html#Filtergraph-description)
+  * (read definition/options for each filter to understand)
+  * [scale filter](https://ffmpeg.org/ffmpeg-filters.html#scale-1)
+  * [pad filter](https://ffmpeg.org/ffmpeg-filters.html#pad-1)
