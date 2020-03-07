@@ -31,13 +31,16 @@
 
 #
 # TODO: store these values somewhere at top of project.ffpres
+####################################################################################################
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
 OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
-AUDIO_FREQ="48000"
 OUT_SCALE=("1920" "1080")  # output resoulution
+AUDIO_FREQ="48000"         # output audio frequency
 OUT_EXT="mov"              # output file extension (don't change this)
-FFMPEG_THREADS="1"
-IMG_DUR="3" # (sec) TODO: consider using the dur field in images ('d' for default)
+IMG_DUR="3"                # (sec) TODO: consider using the dur field in image's config ('d' for default)
+B_COLOR="Black"            # background color for padding videos to fit OUT_SCALE
+FFMPEG_THREADS="1"         # number of threads for ffmpeg to use
+####################################################################################################
 
 # flags used if media has no audio
 #  (fixes issue with final combined video's audio when a video in the middle has no audio)
@@ -48,6 +51,7 @@ SILENT_FIX_FLAGS=(
     -f lavfi -i anullsrc=cl=stereo:r=$AUDIO_FREQ
 )
 
+# TODO: try to make mov files smaller? https://superuser.com/questions/525279/reduce-mov-file-size https://ffmpeg.org/ffmpeg-codecs.html
 # flags in ffmpeg command for conversion:
 #   (best to store these in an array!) https://stackoverflow.com/a/29175560
 CONV_FLAGS=(
@@ -68,7 +72,7 @@ CONV_FLAGS=(
     -ac 2 # force all videos to have exactly two audio channels
     -shortest # needed for SILENT_FIX_FLAGS
     # NOTE: last flag must be the value for -vf (because later we will reference [-1] to modify it)
-    -vf 'settb=expr=1/30000,scale='${OUT_SCALE[0]}:${OUT_SCALE[1]}',fps=30000/1001,format=yuv422p'
+    -vf "settb=expr=1/30000,fps=30000/1001,format=yuv422p"
 )
 
 function process_config() {
@@ -136,31 +140,40 @@ function process_config() {
         newfile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})"
         ###
 
+        # TODO: have way a debug mode where the line number in the file is overlaid on each clip
+
         conv_flags=("${CONV_FLAGS[@]}")         # copy array of flags
         pre_flags=()                            # flags coming in command before "-i $fname"
         ########
         # flags to force videos with no audio stream to have a silent audio stream:
         # (needed for video concat to have the audios line up)
         if [[ -z "$(ffprobe -i "$fname" -show_streams -select_streams a -loglevel error)" ]]; then
-            # TODO: verify this works for images as well...
             pre_flags=("${SILENT_FIX_FLAGS[@]}")
         fi
         ########
         if [ "$fType" == "image" ]; then
-            echo "image's encoding is: $(exiftool "$fname" | grep -i "encoding")"
-            # adjust flags as needed to convert this image to a video
+            # adjust flags as needed to convert this image to a video:
             pre_flags+=("-loop" "1" "-f" "image2")
             conv_flags=("-t" "$IMG_DUR" "${conv_flags[@]}")
+            #echo "image's encoding is: $(exiftool "$fname" | grep -i "encoding")"
+            # TODO: for images set a timeout timer for ffmpeg conversion
+            #   because for example 20180625_162004.jpg never times out do to issue with that image...
         fi
 
-        # check if video is vertical (set flags to rotate and add black bars during re-encoding):
-        if ! [ -z "$rot" ] || [ "$height" -gt "$width" ]; then
-            # tweak flags for -vf
-            conv_flags[-1]="scale=-1:${OUT_SCALE[1]},pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:(ow-iw)/2:color=Black,${conv_flags[-1]}"
+        # compare current to desired aspect ratio to desired to determine how to scale (before padding)
+        #   https://ffmpeg.org/ffmpeg-filters.html#pad-1
+        if [ "$(echo "$width/$height <= ${OUT_SCALE[0]}/${OUT_SCALE[1]}" | bc)" -eq "1" ]; then
+            # and example of this case would be a vertical video (where we'd want to add black bars on either side)
+            # prepend to vf filters:
+            conv_flags[-1]="scale=-1:${OUT_SCALE[1]},pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:x=(ow-iw)/2:color=${B_COLOR},${conv_flags[-1]}"
+        else
+            # and example of this case would be a very wide panorama image
+            conv_flags[-1]="scale=${OUT_SCALE[0]}:-1,pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:y=(oh-ih)/2:color=${B_COLOR},${conv_flags[-1]}"
+
         fi
 
         # print command to log then re-encode:
-        echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"${newfile}\" </dev/null >>\"${LOG_FILE}\" 2>&1"  >>"${LOG_FILE}"
+        echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"${newfile}\""  >>"${LOG_FILE}"
         ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "${newfile}"  </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
@@ -180,10 +193,10 @@ function process_config() {
 
     # concatenate videos into one:
     #  (keep in mind that for this step it is critical that all videos being combined
-    #    are the exact same encoding, number of audio streams, etc)
+    #    are the exact same encoding, number of audio streams, SAR/DAR, etc)
     echo -e "\nCombining videos... in \"$OUT_LIST\"\n"
     echo -e "\n===================\nCommand for combining videos:" >>"${LOG_FILE}"
-    echo -e "ffmpeg -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy \"$OUT_COMBINED\" -threads "$FFMPEG_THREADS" </dev/null >>\"${LOG_FILE}\" 2>&1\n" >>"${LOG_FILE}"
+    echo -e "ffmpeg -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy \"$OUT_COMBINED\" -threads \"$FFMPEG_THREADS\"" >>"${LOG_FILE}"
     ffmpeg -f concat -y -safe 0 -i "$OUT_LIST" -c copy "$OUT_COMBINED" -threads "$FFMPEG_THREADS" </dev/null >>"${LOG_FILE}" 2>&1
 
     if [ "$?" -ne "0" ]; then
