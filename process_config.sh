@@ -1,29 +1,12 @@
 #!/bin/sh
-# read config file ($1)
-# and convert each file one by one to dnxhd
-# and rotate files (where rot!=""), adding black padding as needed
-# (the point is someone can manually modify the file before running this step)
+#################################################
+# reads config file ($1)
+#   and converts each file one by one to dnxhd according to provided config
+#   then combine everythin into a file outputted video in the folder $2
+#################################################
 # mediainfo <video> # (useful command)
 # get help with a filter (e.g. apad):
 #  ffmpeg -h filter=apad
-#
-# useful filters to consider in future:
-#   (https://ffmpeg.org/ffmpeg-filters.html)
-#   afade (apply fad-in/out effect to input audio)
-#   apad (pad the end of an audio stream with silence)
-#   aresample (stretch/squeeze the audio data to make it match the timestamps or to inject silence / cut out audio to make it match the timestamps)
-#
-# note: sample rate is the number of samples of audio carried per second (measured in HZ)
-#  you can see this when you do `ffmpeg -i <video_file>`
-
-# view the time_base of files: (this is important):
-#  https://video.stackexchange.com/a/19238
-#   ls *.mov | xargs -L 1 ffprobe -select_streams a -show_entries stream=time_base -of compact=p=0 2>/dev/null| grep -i "time_base"
-# 
-# what is a timebase? https://stackoverflow.com/a/43337235
-#   (a defined unit of time to serve as a unit representing one tick of a clock)
-#   PTS (Presentation Time Stamps) are denominated in terms of this timebase.
-#   "tbn" (in ffmpeg readout) = Timescale = 1 / timebase
 #
 # TODO: https://ffmpeg.org/ffmpeg-filters.html#concat
 #       https://stackoverflow.com/questions/47050033/ffmpeg-join-two-movies-with-different-timebase
@@ -35,7 +18,7 @@
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
 OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 OUT_SCALE=("1920" "1080")  # output resoulution
-AUDIO_FREQ="48000"         # output audio frequency
+AUDIO_FREQ="48000"         # output audio frequency in HZ (number of samples of audio carried per second)
 OUT_EXT="mov"              # output file extension (don't change this)
 IMG_DUR="1.5"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
 B_COLOR="Black"            # background color for padding videos to fit OUT_SCALE
