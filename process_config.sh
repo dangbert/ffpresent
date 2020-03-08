@@ -37,9 +37,11 @@ OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 OUT_SCALE=("1920" "1080")  # output resoulution
 AUDIO_FREQ="48000"         # output audio frequency
 OUT_EXT="mov"              # output file extension (don't change this)
-IMG_DUR="3"                # (sec) TODO: consider using the dur field in image's config ('d' for default)
+IMG_DUR="1.5"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
 B_COLOR="Black"            # background color for padding videos to fit OUT_SCALE
 FFMPEG_THREADS="1"         # number of threads for ffmpeg to use
+DEBUG="0"                  # 0 for normal mode, 1 for debug mode (overlaid text details on video)
+FONT="/usr/share/fonts/gnu-free/FreeSans.ttf"
 ####################################################################################################
 
 # flags used if media has no audio
@@ -89,8 +91,8 @@ function process_config() {
     CONFIG_FILE="$1"
     FOLDER="$2/combined_output"
     FOLDER_MOVS="$FOLDER/intermediary" # folder to store converted mov files
-    LOG_FILE="$FOLDER/tmp-ffmpeg-log.txt"
-    OUT_LIST="$FOLDER/list-combine.txt"
+    LOG_FILE="$FOLDER/ffmpeg-log.txt"
+    OUT_LIST="$FOLDER/combine-list.txt"
     OUT_COMBINED="$FOLDER/out-combined.mov"
 
     if [ -d "$FOLDER" ]; then
@@ -99,27 +101,31 @@ function process_config() {
     fi
     echo "All outputs will be saved in: \"${FOLDER}\"..."
     mkdir -p "$FOLDER" && mkdir -p "$FOLDER_MOVS"
-    echo "ffmpeg progress will be logged to: \"${LOG_FILE}\"..." && echo ""
+    echo "ffmpeg progress will be logged to: \"${LOG_FILE}\"..."
 
-    echo "current line:"
-    skipCount=0
+    echo -e "\ncurrent line (note lines starting with '#' are skipped):"
+    local skipCount="0"
+    local curLine="0"
+    local totalLines="$(wc -l "$CONFIG_FILE")"
+    local errCount="0"
     # iterate over lines in $config_file
     # TODO: convert videos in the list in parallel
     #   https://stackoverflow.com/a/43308733
     while IFS= read -r line
     do
+        curLine="$((curLine+1))"
         # support commented lines here
         # TODO: get it working with leading spaces
         #if [[ "$(echo $("$line" | xargs echo -n ))" == \#* ]]; then
         if [[ "$(echo $(echo "$line"))" == \#* ]]; then
-            skipCount=$((skipCount+1))
+            skipCount="$((skipCount+1))"
             continue
         fi
-        # TODO: consider adding something like: "  (line 3 of 201)"
-        echo "  >>> $line"
+        echo "(line $curLine/$totalLines) >>> $line"
+        echo "(line $curLine/$totalLines) >>> $line" >> "${LOG_FILE}"
         # parse values from line:
         IFS=',' read -ra ARR <<< "$line"
-        count=$(awk -F"," '{print NF-1}' <<< "${line}")
+        local count=$(awk -F"," '{print NF-1}' <<< "${line}")
         if [ "$count" -lt "5" ]; then # may be more than 5 if fname contains a comma
             echo "ERROR: found $count occurences of delimter (expected 5)."
             exit 1
@@ -129,21 +135,30 @@ function process_config() {
             continue # TODO: for now
             # TODO: if count > 5 we should combine the last elements of the array (to handle filenames with a comma
         fi
-        fType="${ARR[0]}"; width="${ARR[1]}"; height="${ARR[2]}"; rot="${ARR[3]}"; dur="${ARR[4]}"; fname="${ARR[5]}"
+        local fType="${ARR[0]}"; local width="${ARR[1]}"; local height="${ARR[2]}";
+        local rot="${ARR[3]}";   local dur="${ARR[4]}";   local fname="${ARR[5]}"
 
+        if ! [ -f "$fname" ]; then
+            echo -e "\tERROR: file not found (skipping for now): '$fname'"
+            errCount="$((errCount+1))"
+            continue
+        fi
         ###
         # generate filename (doesn't create file):
         #   TODO: create a new folder and put all the new files in with the same hierachy as before???
         #   https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
         #   https://stackoverflow.com/a/14892459
-        #newfile="$(mktemp -u --tmpdir="$FOLDER_MOVS").${OUT_EXT}"
-        newfile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})"
+        #newfile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})" # handles duplicates
+        local newfile="$FOLDER_MOVS/`basename "$fname"`.${OUT_EXT}" # TODO: this doesn't handle duplicates
+        if [ -f "$newFile" ]; then
+            echo -e "\tWARNING: overwriting existing file '$newFile'"
+        fi
         ###
 
         # TODO: have way a debug mode where the line number in the file is overlaid on each clip
 
-        conv_flags=("${CONV_FLAGS[@]}")         # copy array of flags
-        pre_flags=()                            # flags coming in command before "-i $fname"
+        local conv_flags=("${CONV_FLAGS[@]}")         # copy array of flags
+        local pre_flags=()                            # flags coming in command before "-i $fname"
         ########
         # flags to force videos with no audio stream to have a silent audio stream:
         # (needed for video concat to have the audios line up)
@@ -152,9 +167,13 @@ function process_config() {
         fi
         ########
         if [ "$fType" == "image" ]; then
+            local imgDur="$IMG_DUR"
+            if [[ "$dur" =~ ^[0-9]+([.][0-9]+)?$ ]]; then # check if $dur is a number (int or float)
+                imgDur="$dur"
+            fi
             # adjust flags as needed to convert this image to a video:
             pre_flags+=("-loop" "1" "-f" "image2")
-            conv_flags=("-t" "$IMG_DUR" "${conv_flags[@]}")
+            conv_flags=("-t" "$imgDur" "${conv_flags[@]}")
             #echo "image's encoding is: $(exiftool "$fname" | grep -i "encoding")"
             # TODO: for images set a timeout timer for ffmpeg conversion
             #   because for example 20180625_162004.jpg never times out do to issue with that image...
@@ -169,24 +188,39 @@ function process_config() {
         else
             # and example of this case would be a very wide panorama image
             conv_flags[-1]="scale=${OUT_SCALE[0]}:-1,pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:y=(oh-ih)/2:color=${B_COLOR},${conv_flags[-1]}"
+        fi
+
+        # debug mode (ovelay text details on videos):
+        if [ "$DEBUG" -eq "1" ]; then
+            local debugText="image #${curLine}, \"$(basename "$fname")\""
+            # using printf to escape symbols like spaces, etc https://stackoverflow.com/a/12811033
+            conv_flags[-1]="${conv_flags[-1]},drawtext=fontfile=${FONT}:text='$(printf %q "$debugText")':fontcolor=white:fontsize=24:box=1:boxcolor=black:x=(w-text_w)/2:y=h-th"
 
         fi
+        # allows us to put extra quotes around vf_args below (needed when doing text overlay e.g. if there's a space in the text)
+        local vf_args="${conv_flags[-1]}"
+        conv_flags[-1]=""
 
         # print command to log then re-encode:
         echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"${newfile}\""  >>"${LOG_FILE}"
-        ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "${newfile}"  </dev/null >>"${LOG_FILE}" 2>&1
+        ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newfile}"  </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
-            echo "ERROR: (exit code $?) converting video: \"$fname\" (aborting early)..."
-            echo "  $CMD" && echo "" && exit 1
+            errCount="$((errCount+1))"
+            echo "ERROR: (exit code $?) converting video: \"$fname\" (skipping for now)..."
+            echo -e "  $CMD\n" #&& exit 1
+            continue
         fi
         # TODO: also preserve metadata from original file (date created, etc)?
-        # store the absolute path to this file in "$OUT_LIST"
-        printf "file \'`realpath "$newfile"`\'\n" >> "$OUT_LIST"
+        # TODO: replace occurences of ' in $newfile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
+        printf "file \'`realpath "$newfile"`\'\n" >> "$OUT_LIST" # store the absolute path to this file in "$OUT_LIST"
     done < "$CONFIG_FILE"
 
     echo -e "\n*****************:\nFinished re-encoding videos!"
     if [ "$skipCount" -gt "0" ]; then
         echo "Note: skipped $skipCount commented lines in \"$CONFIG_FILE\""
+    fi
+    if [ "$errCount" -gt "0" ]; then
+        echo "WARNING: $errCount errors processing \"$CONFIG_FILE\""
     fi
     echo "List of videos used to concatenate outputted to: \"$OUT_LIST\""
     echo "*****************:"
@@ -196,8 +230,9 @@ function process_config() {
     #    are the exact same encoding, number of audio streams, SAR/DAR, etc)
     echo -e "\nCombining videos... in \"$OUT_LIST\"\n"
     echo -e "\n===================\nCommand for combining videos:" >>"${LOG_FILE}"
-    echo -e "ffmpeg -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy \"$OUT_COMBINED\" -threads \"$FFMPEG_THREADS\"" >>"${LOG_FILE}"
-    ffmpeg -f concat -y -safe 0 -i "$OUT_LIST" -c copy "$OUT_COMBINED" -threads "$FFMPEG_THREADS" </dev/null >>"${LOG_FILE}" 2>&1
+    echo -e "ffmpeg -hide_banner -loglevel warning -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy -threads \"$FFMPEG_THREADS\" \"$OUT_COMBINED\""  >>"${LOG_FILE}"
+    # TODO: consider putting this output to the terminal as well (it seems to exit with code 0 even if it can't open one image)
+    ffmpeg -hide_banner -loglevel warning -f concat -y -safe 0 -i "$OUT_LIST" -c copy -threads "$FFMPEG_THREADS" "$OUT_COMBINED"  </dev/null >>"${LOG_FILE}" 2>&1
 
     if [ "$?" -ne "0" ]; then
         echo "  ERROR: (exit code $?) combining videos"
