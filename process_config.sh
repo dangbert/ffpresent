@@ -121,8 +121,8 @@ function process_config() {
             skipCount="$((skipCount+1))"
             continue
         fi
-        echo "(line $curLine/$totalLines) >>> $line"
-        echo "(line $curLine/$totalLines) >>> $line" >> "${LOG_FILE}"
+        echo -e "(line $curLine/$totalLines) >>> $line"
+        echo -e "\n(line $curLine/$totalLines) >>> $line" >> "${LOG_FILE}"
         # parse values from line:
         IFS=',' read -ra ARR <<< "$line"
         local count=$(awk -F"," '{print NF-1}' <<< "${line}")
@@ -181,7 +181,7 @@ function process_config() {
 
         # compare current to desired aspect ratio to desired to determine how to scale (before padding)
         #   https://ffmpeg.org/ffmpeg-filters.html#pad-1
-        if [ "$(echo "$width/$height <= ${OUT_SCALE[0]}/${OUT_SCALE[1]}" | bc)" -eq "1" ]; then
+        if [ "$(awk -v a="$width" -v b="$height" -v c="${OUT_SCALE[0]}" -v d="${OUT_SCALE[1]}" "BEGIN{print( a/b <= c/d )}")" -eq "1" ]; then
             # and example of this case would be a vertical video (where we'd want to add black bars on either side)
             # prepend to vf filters:
             conv_flags[-1]="scale=-1:${OUT_SCALE[1]},pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:x=(ow-iw)/2:color=${B_COLOR},${conv_flags[-1]}"
@@ -192,22 +192,20 @@ function process_config() {
 
         # debug mode (ovelay text details on videos):
         if [ "$DEBUG" -eq "1" ]; then
-            local debugText="image #${curLine}, \"$(basename "$fname")\""
+            local debugText="line #${curLine}, \"$(basename "$fname")\""
             # using printf to escape symbols like spaces, etc https://stackoverflow.com/a/12811033
             conv_flags[-1]="${conv_flags[-1]},drawtext=fontfile=${FONT}:text='$(printf %q "$debugText")':fontcolor=white:fontsize=24:box=1:boxcolor=black:x=(w-text_w)/2:y=h-th"
-
         fi
-        # allows us to put extra quotes around vf_args below (needed when doing text overlay e.g. if there's a space in the text)
+        # allows us to put extra quotes around vf_args in the command below (needed when doing text overlay e.g. if there's a space in the text)
         local vf_args="${conv_flags[-1]}"
         conv_flags[-1]=""
 
         # print command to log then re-encode:
-        echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"${newfile}\""  >>"${LOG_FILE}"
+        echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"$vf_args\" \"${newfile}\""  >>"${LOG_FILE}"
         ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newfile}"  </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
+            echo "ERROR: (exit code $?) converting video: \"$fname\" (skipping for now)...\n"
             errCount="$((errCount+1))"
-            echo "ERROR: (exit code $?) converting video: \"$fname\" (skipping for now)..."
-            echo -e "  $CMD\n" #&& exit 1
             continue
         fi
         # TODO: also preserve metadata from original file (date created, etc)?
