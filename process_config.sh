@@ -16,15 +16,16 @@
 # TODO: store these values somewhere at top of project.ffpres
 ####################################################################################################
 # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
-OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
-OUT_SCALE=("1920" "1080")  # output resoulution
-AUDIO_FREQ="48000"         # output audio frequency in HZ (number of samples of audio carried per second)
 OUT_EXT="mov"              # output file extension (don't change this)
-IMG_DUR="1.5"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
+OUT_SCALE=("1920" "1080")  # output resoulution
+OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
+FPS="25"                   # frames per second (25, 30000/1001, 50, ...)
+AUDIO_FREQ="48000"         # output audio frequency in HZ (number of samples of audio carried per second)
+IMG_DUR="4.1"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
 B_COLOR="Black"            # background color for padding videos to fit OUT_SCALE
 FFMPEG_THREADS="1"         # number of threads for ffmpeg to use
 DEBUG="0"                  # 0 for normal mode, 1 for debug mode (overlaid text details on video)
-FONT="/usr/share/fonts/gnu-free/FreeSans.ttf"
+FONT="/usr/share/fonts/gnu-free/FreeSans.ttf"   # path to font file used for debug text
 ####################################################################################################
 
 # flags used if media has no audio
@@ -59,7 +60,7 @@ CONV_FLAGS=(
     -ac 2 # force all videos to have exactly two audio channels
     -shortest # needed for SILENT_FIX_FLAGS
     # NOTE: last flag must be the value for -vf (because later we will reference [-1] to modify it)
-    -vf "settb=expr=1/30000,fps=30000/1001,format=yuv422p"
+    -vf "settb=expr=1/30000,fps=$FPS,format=yuv422p"
 )
 
 function process_config() {

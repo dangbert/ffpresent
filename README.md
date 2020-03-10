@@ -65,6 +65,12 @@ ffmpeg -hide_banner -y -i iphone/VER_2.MOV -c:v dnxhd -vf "scale=-1:1080,pad=192
 
 ---
 ### Useful Commands to know:
+* [replacing a video's audio with a provided audio file](https://superuser.com/a/277667 ):
+````bash
+# (also seemed to drastically lower the file size of my slideshow video without much noticeable quality drop):
+fmpeg -i combined_output/out-combined.mov -i ../source_music/combined_music/combined-music.mp3 -map 0:v:0 -map 1:a:0 -shortest  combined_output/v4-with_music.mov
+````
+
 * get list of all file extensions inside a folder: [reference](https://stackoverflow.com/a/4998326)
 ````bash
 find . -type f -name '*.*' | sed 's|.*\.||' | sort -u
