@@ -31,7 +31,7 @@ This tools works on almost any images/videos regardless of their codecs.
 ---
 ### Known limitations:
 * file names containing a comma will mess up the scripts?
-* file names containing an apostrophe will mess up the combinarion process (I will fix this soon)
+* file names containing an apostrophe will mess up the combination process (I will fix this soon)
 
 ---
 ### Future Ideas:

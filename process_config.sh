@@ -52,6 +52,8 @@ CONV_FLAGS=(
     -fflags +genpts
     -c:v dnxhd
     -b:v $OUT_BITRATE
+    # TODO: crf option isn't working (for lowering file size):
+    #-crf 5 # Valid range is 0 (lower quality) to 63 (higher quality). Only used if set; by default only the bitrate target is used.
     -ar $AUDIO_FREQ # set the audio sampling frequency
     # important! videos must either be all stereo or all mono before concat:
     -ac 2 # force all videos to have exactly two audio channels
@@ -61,8 +63,6 @@ CONV_FLAGS=(
 )
 
 function process_config() {
-    # TODO: create a "debug" mode where extra info is added to each video as overlaid text
-    # (e.g. filename, location in config file, etc)
     if [ "$#" -ne 2 ]; then
         echo "ERROR expected 2 args, received: $#"
         echo "USAGE:"
@@ -159,7 +159,11 @@ function process_config() {
             conv_flags=("-t" "$imgDur" "${conv_flags[@]}")
             #echo "image's encoding is: $(exiftool "$fname" | grep -i "encoding")"
             # TODO: for images set a timeout timer for ffmpeg conversion
-            #   because for example 20180625_162004.jpg never times out do to issue with that image...
+            #   because for example 20180625_162004.jpg never times out do to some issue with that image...
+
+            # TODO: add ability to slowly zoom in or zoom out on images
+            #   https://superuser.com/a/1127759
+            #   https://ffmpeg.org/ffmpeg-filters.html#zoompan
         fi
 
         # compare current to desired aspect ratio to desired to determine how to scale (before padding)
