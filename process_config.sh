@@ -68,7 +68,7 @@ function process_config() {
         echo "ERROR expected 2 args, received: $#"
         echo "USAGE:"
         echo "  ./process_config.sh <config_file> <output_folder>"
-        echo "  EXAMPLE: ./process_config.sh list-detailed.txt /tmp"
+        echo "  EXAMPLE: ./process_config.sh project.ffpres ."
         exit 1
     fi
 
@@ -78,10 +78,16 @@ function process_config() {
     LOG_FILE="$FOLDER/ffmpeg-log.txt"
     OUT_LIST="$FOLDER/combine-list.txt"
     OUT_COMBINED="$FOLDER/out-combined.mov"
+    CONT="0" # "1" if we are continuing a previous run that failed
 
     if [ -d "$FOLDER" ]; then
         echo "output folder \"$FOLDER\" already exists. Delete and try again."
-        exit 1
+        read -p "Or continue previous run using existing folder? (y/n): " -n 1 -r && echo ""
+        if [[ ! $REPLY =~ ^[Yy] ]]; then exit 1; fi
+        CONT="1"
+
+        echo -e "\n\n===== Continuing previous run (`date`) =====" > "$LOG_FILE"
+        rm -f "$OUT_LIST" # remove existing OUT_LIST (we will recreate it below)
     fi
     echo "All outputs will be saved in: \"${FOLDER}\"..."
     mkdir -p "$FOLDER" && mkdir -p "$FOLDER_MOVS"
@@ -132,14 +138,21 @@ function process_config() {
         #   TODO: create a new folder and put all the new files in with the same hierachy as before???
         #   https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
         #   https://stackoverflow.com/a/14892459
-        #newfile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})" # handles duplicates
-        local newfile="$FOLDER_MOVS/`basename "$fname"`.${OUT_EXT}" # TODO: this doesn't handle duplicates
+        #newFile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})" # handles duplicates
+        local newFile="$FOLDER_MOVS/`basename "$fname"`.${OUT_EXT}" # TODO: this doesn't handle duplicates (files with same basename)
         if [ -f "$newFile" ]; then
-            echo -e "\tWARNING: overwriting existing file '$newFile'"
+            if [[ "$CONT" == "1" ]]; then
+                # continue old run that may have failed half way:
+                echo -e "\tNOTE: skipping existing file '$newFile'"
+
+                # TODO: replace occurences of ' in $newFile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
+                printf "file \'`realpath "$newFile"`\'\n" >> "$OUT_LIST" # store the absolute path to this file in "$OUT_LIST"
+                continue
+            else
+                echo -e "\tWARNING: overwriting existing file '$newFile'"
+            fi
         fi
         ###
-
-        # TODO: have way a debug mode where the line number in the file is overlaid on each clip
 
         local conv_flags=("${CONV_FLAGS[@]}")         # copy array of flags
         local pre_flags=()                            # flags coming in command before "-i $fname"
@@ -189,16 +202,16 @@ function process_config() {
         conv_flags[-1]=""
 
         # print command to log then re-encode:
-        echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"$vf_args\" \"${newfile}\""  >>"${LOG_FILE}"
-        ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newfile}"  </dev/null >>"${LOG_FILE}" 2>&1
+        echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"$vf_args\" \"${newFile}\""  >>"${LOG_FILE}"
+        ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newFile}"  </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
             echo "ERROR: (exit code $?) converting video: \"$fname\" (skipping for now)...\n"
             errCount="$((errCount+1))"
             continue
         fi
         # TODO: also preserve metadata from original file (date created, etc)?
-        # TODO: replace occurences of ' in $newfile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
-        printf "file \'`realpath "$newfile"`\'\n" >> "$OUT_LIST" # store the absolute path to this file in "$OUT_LIST"
+        # TODO: replace occurences of ' in $newFile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
+        printf "file \'`realpath "$newFile"`\'\n" >> "$OUT_LIST" # store the absolute path to this file in "$OUT_LIST"
     done < "$CONFIG_FILE"
 
     echo -e "\n*****************:\nFinished re-encoding videos!"
