@@ -205,6 +205,7 @@ function process_config() {
         echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"$vf_args\" \"${newFile}\""  >>"${LOG_FILE}"
         ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newFile}"  </dev/null >>"${LOG_FILE}" 2>&1
         if [ "$?" -ne "0" ]; then
+            rm -f "${newFile}"
             echo "ERROR: (exit code $?) converting video: \"$fname\" (skipping for now)...\n"
             errCount="$((errCount+1))"
             continue
