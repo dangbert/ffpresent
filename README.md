@@ -65,23 +65,30 @@ ffmpeg -hide_banner -y -i iphone/VER_2.MOV -c:v dnxhd -vf "scale=-1:1080,pad=192
 
 ---
 ### Useful Commands to know:
+
 * [replacing a video's audio with a provided audio file](https://superuser.com/a/277667 ):
 ````bash
 # (also seemed to drastically lower the file size of my slideshow video without much noticeable quality drop):
 fmpeg -i combined_output/out-combined.mov -i ../source_music/combined_music/combined-music.mp3 -map 0:v:0 -map 1:a:0 -shortest  combined_output/v4-with_music.mov
 ````
 
-* get list of all file extensions inside a folder: [reference](https://stackoverflow.com/a/4998326)
+* convert mp3 files to wav for Davinci Resolve:
 ````bash
-find . -type f -name '*.*' | sed 's|.*\.||' | sort -u
+ls *.mp3 | xargs -L 1 -I@ bash -c "ffmpeg -i \"@\" \"`dirname @`/wav/@.wav\""
 ````
 
-* list all files in order by date:
-````bash
-find -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n | cut -d',' -f 2
-````
+* listing files:
+    * get list of all file extensions inside a folder: [reference](https://stackoverflow.com/a/4998326)
+    ````bash
+    find . -type f -name '*.*' | sed 's|.*\.||' | sort -u
+    ````
 
-* get all files matching a list of extensions: [reference](https://stackoverflow.com/a/2622857)
-````bash
-find /path/to -type f -regex ".*\.\(jpg\|gif\|png\|jpeg\)"
-````
+    * list all files in order by date:
+    ````bash
+    find -printf "%TY-%Tm-%Td %TT,%p\n" | sort -n | cut -d',' -f 2
+    ````
+
+    * get all files matching a list of extensions: [reference](https://stackoverflow.com/a/2622857)
+    ````bash
+    find /path/to -type f -regex ".*\.\(jpg\|gif\|png\|jpeg\)"
+    ````
