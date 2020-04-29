@@ -21,7 +21,7 @@ OUT_SCALE=("1920" "1080")  # output resoulution
 OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 FPS="25"                   # frames per second (25, 30000/1001, 50, ...)
 AUDIO_FREQ="48000"         # output audio frequency in HZ (number of samples of audio carried per second)
-IMG_DUR="4.1"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
+IMG_DUR="3.5"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
 B_COLOR="Black"            # background color for padding videos to fit OUT_SCALE
 FFMPEG_THREADS="1"         # number of threads for ffmpeg to use
 DEBUG="0"                  # 0 for normal mode, 1 for debug mode (overlaid text details on video)
@@ -45,9 +45,9 @@ CONV_FLAGS=(
     -c:a pcm_s16le
     -af "aresample=async=1024"
     #-async 25
-    #-af "apad"
+    -af "apad"
     #-af "asettb=expr=1/48000"
-    #-shortest
+    -shortest
     #-avoid_negative_ts make_zero
     #-video_track_timescale 600
     -fflags +genpts
