@@ -204,9 +204,10 @@ function process_config() {
         # print command to log then re-encode:
         echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"$vf_args\" \"${newFile}\""  >>"${LOG_FILE}"
         ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newFile}"  </dev/null >>"${LOG_FILE}" 2>&1
-        if [ "$?" -ne "0" ]; then
+        exitCode=$?
+        if [ "$exitCode" -ne "0" ]; then
             rm -f "${newFile}"
-            echo "ERROR: (exit code $?) converting video: \"$fname\" (skipping for now)...\n"
+            echo "ERROR: (exit code $exitCode) converting video: \"$fname\" (skipping for now)...\n"
             errCount="$((errCount+1))"
             continue
         fi
@@ -233,9 +234,9 @@ function process_config() {
     echo -e "ffmpeg -hide_banner -loglevel warning -f concat -y -safe 0 -i \"$OUT_LIST\" -c copy -threads \"$FFMPEG_THREADS\" \"$OUT_COMBINED\""  >>"${LOG_FILE}"
     # TODO: consider putting this output to the terminal as well (it seems to exit with code 0 even if it can't open one image)
     ffmpeg -hide_banner -loglevel warning -f concat -y -safe 0 -i "$OUT_LIST" -c copy -threads "$FFMPEG_THREADS" "$OUT_COMBINED"  </dev/null >>"${LOG_FILE}" 2>&1
-
-    if [ "$?" -ne "0" ]; then
-        echo "  ERROR: (exit code $?) combining videos"
+    exitCode=$?
+    if [ "$exitCode" -ne "0" ]; then
+        echo "  ERROR: (exit code $exitCode) combining videos"
         exit 1
     fi
     echo "  combined video generated: \"$OUT_COMBINED\""
