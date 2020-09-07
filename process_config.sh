@@ -173,14 +173,18 @@ function process_config() {
         #   https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
         #   https://stackoverflow.com/a/14892459
         #newFile="$(mktemp -u "$FOLDER_INTER/`basename "$fname"`.XXXXX".${OUT_EXT})" # handles duplicates
-        local newFile="$FOLDER_INTER/`basename "$fname"`.${OUT_EXT}" # TODO: this doesn't handle duplicates (files with same basename)
+        local newFile="$(realpath "$FOLDER_INTER/`basename "$fname"`.${OUT_EXT}")" # TODO: this doesn't handle duplicates (files with same basename)
         if [ -f "$newFile" ]; then
             if [[ "$CONT" == "1" ]]; then
                 # continue old run that may have failed half way:
                 echo -e "\tNOTE: skipping existing file '$newFile'"
+                    if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
+                    # fix for windows https://stackoverflow.com/a/8597411 (where absolute path doesn't work in this file)
+                    newFile="$(basename $(dirname "$newFile"))/$(basename "$newFile")"
+                fi
 
                 # TODO: replace occurences of ' in $newFile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
-                printf "file \'`realpath "$newFile"`\'\n" >> "$OUT_LIST" # store the absolute path to this file in "$OUT_LIST"
+                printf "file \'$newFile\'\n" >> "$OUT_LIST" # store the path to this file in "$OUT_LIST"
                 continue
             else
                 echo -e "\tWARNING: overwriting existing file '$newFile'"
@@ -247,7 +251,11 @@ function process_config() {
         fi
         # TODO: also preserve metadata from original file (date created, etc)?
         # TODO: replace occurences of ' in $newFile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
-        printf "file \'`realpath "$newFile"`\'\n" >> "$OUT_LIST" # store the absolute path to this file in "$OUT_LIST"
+        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
+            # fix for windows https://stackoverflow.com/a/8597411 (where absolute path doesn't work in this file)
+            newFile="$(basename $(dirname "$newFile"))/$(basename "$newFile")"
+        fi
+        printf "file \'$newFile\'\n" >> "$OUT_LIST" # store the path to this file in "$OUT_LIST"
     done < "$CONFIG_FILE"
 
     echo -e "\n*****************:\nFinished re-encoding videos!"
