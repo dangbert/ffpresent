@@ -242,4 +242,8 @@ function process_config() {
     echo "  combined video generated: \"$OUT_COMBINED\""
 }
 
+if [ -z `which ffmpeg` ] || [ -z `which ffprobe` ]; then
+    echo "ERROR: ffmpeg not installed?" >&2
+    exit 1
+fi
 process_config "$@"

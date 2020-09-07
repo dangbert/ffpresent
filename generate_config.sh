@@ -151,7 +151,9 @@ function get_res() {
 
 # returns duration of video in string format "HH:MM:SS"
 function get_dur() {
+
     FNAME="$1" # name of file to check
+    echo "get_dur fname='$FNAME'" >> /dev/stderr
     val=`ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=s=x:p=0 -i "$FNAME" 2>/dev/null | head -n 1`
     #echo "fname='$FNAME', val='$val'"
     if [[ "$val" == "N/A" ]]; then
@@ -187,6 +189,10 @@ function usage() {
 }
 
 # TODO: use proper flag parsing?
+if [ -z `which ffmpeg` ] || [ -z `which ffprobe` ]; then
+    echo "ERROR: ffmpeg not installed?" >&2
+    exit 1
+fi
 if [ "$#" == "2" ] && [ "$1" == "-g" ] && [ -f "$2" ]; then
     # adds support for: generate_config.sh -g list.txt
     if [ -f "$OUT_CONFIG" ]; then
