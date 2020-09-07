@@ -23,7 +23,7 @@ B_COLOR="Black"            # background color for padding videos to fit OUT_SCAL
 FFMPEG_THREADS="1"         # number of threads for ffmpeg to use
 DEBUG="0"                  # 0 for normal mode, 1 for debug mode (overlaid text details on video)
 FONT="/usr/share/fonts/gnu-free/FreeSans.ttf"   # path to font file used for debug text
-OUT_EXT="mp4"              # default output file extension ("mp4" or "mov")
+OUT_EXT="mp4"              # default output file extension ("mp4" or "webm" or "mov")
 ####################################################################################################
 
 # mp4 specific ffmpeg flags
@@ -41,6 +41,13 @@ mov_flags=(
     -c:a pcm_s16le
     -c:v dnxhd
     -b:v 36M          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
+)
+
+webm_flags=(
+    # https://trac.ffmpeg.org/wiki/Encode/VP9
+    -c:a libopus
+    -c:v libvpx-vp9
+    -b:v 2M
 )
 
 # flags used if media has no audio
@@ -69,7 +76,7 @@ CONV_FLAGS=(
     # important! videos must either be all stereo or all mono before concat:
     -ac 2 # force all videos to have exactly two audio channels
     -shortest # needed for SILENT_FIX_FLAGS
-    -max_muxing_queue_size 9999 # fix for https://stackoverflow.com/q/49686244
+    -max_muxing_queue_size 30000 # fix for https://stackoverflow.com/q/49686244
     # NOTE: last flag must be the value for -vf (because later we will reference [-1] to modify it)
     -vf "settb=expr=1/30000,fps=$FPS,format=yuv422p"
 )
@@ -78,9 +85,10 @@ function usage() {
     echo "USAGE:"
     echo "    ./process_config.sh <config_file> <output_folder> [--mov | --mp4]"
     echo "EXAMPLES:"
-    echo "    ./process_config.sh project.ffpres .        # (uses default output format mp4)"
-    echo "    ./process_config.sh project.ffpres . --mov  # output as an mov file"
-    echo "    ./process_config.sh project.ffpres . --mp4  # output as an mp4 file"
+    echo "    ./process_config.sh project.ffpres .         # (uses default output format mp4)"
+    echo "    ./process_config.sh project.ffpres . --mov   # output as mov file"
+    echo "    ./process_config.sh project.ffpres . --mp4   # output as mp4 file"
+    echo "    ./process_config.sh project.ffpres . --webm  # output as webm file"
 }
 function process_config() {
     if [ "$#" ==  3 ]; then
@@ -88,6 +96,8 @@ function process_config() {
             OUT_EXT="mov"
         elif [ $3 == "--mp4" ]; then
             OUT_EXT="mp4"
+        elif [ $3 == "--webm" ]; then
+            OUT_EXT="webm"
         else
             echo "ERROR invalid flag provided '$3'" >&2; usage; exit 1
         fi
@@ -99,6 +109,8 @@ function process_config() {
         SPECIFIC_FLAGS=("${mp4_flags[@]}")
     elif [ "$OUT_EXT" == "mov" ]; then
         SPECIFIC_FLAGS=("${mov_flags[@]}")
+    elif [ "$OUT_EXT" == "webm" ]; then
+        SPECIFIC_FLAGS=("${webm_flags[@]}")
     else
         echo "ERROR: output extension '$OUT_EXT' not supported" >&2
         exit 1
