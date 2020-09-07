@@ -13,12 +13,9 @@
 #       https://github.com/leandromoreira/ffmpeg-libav-tutorial#learn-ffmpeg-libav-the-hard-way
 
 #
-# TODO: store these values somewhere at top of project.ffpres
+# TODO: store these values somewhere at top of project.ffpres?
 ####################################################################################################
-# https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
-OUT_EXT="mov"              # output file extension (don't change this)
 OUT_SCALE=("1920" "1080")  # output resoulution
-OUT_BITRATE="36M"          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
 FPS="25"                   # frames per second (25, 30000/1001, 50, ...)
 AUDIO_FREQ="48000"         # output audio frequency in HZ (number of samples of audio carried per second)
 IMG_DUR="3.5"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
@@ -26,7 +23,25 @@ B_COLOR="Black"            # background color for padding videos to fit OUT_SCAL
 FFMPEG_THREADS="1"         # number of threads for ffmpeg to use
 DEBUG="0"                  # 0 for normal mode, 1 for debug mode (overlaid text details on video)
 FONT="/usr/share/fonts/gnu-free/FreeSans.ttf"   # path to font file used for debug text
+OUT_EXT="mp4"              # default output file extension ("mp4" or "mov")
 ####################################################################################################
+
+# mp4 specific ffmpeg flags
+mp4_flags=(
+    -c:a aac #libfdk_aac # https://trac.ffmpeg.org/wiki/Encode/AAC
+    -c:v libx264
+    -b:v 1M
+    # TODO: crf option isn't working (for lowering file size):
+    #-crf 5 # Valid range is 0 (lower quality) to 63 (higher quality). Only used if set; by default only the bitrate target is used.
+)
+# mov specific ffmpeg flags
+mov_flags=(
+    # https://en.wikipedia.org/wiki/List_of_Avid_DNxHD_resolutions
+    # TODO: try to make mov files smaller? https://superuser.com/questions/525279/reduce-mov-file-size https://ffmpeg.org/ffmpeg-codecs.html
+    -c:a pcm_s16le
+    -c:v dnxhd
+    -b:v 36M          # output bitrate (36M, 45M, 75M, 115M, ...) (Mbps)
+)
 
 # flags used if media has no audio
 #  (fixes issue with final combined video's audio when a video in the middle has no audio)
@@ -37,24 +52,19 @@ SILENT_FIX_FLAGS=(
     -f lavfi -i anullsrc=cl=stereo:r=$AUDIO_FREQ
 )
 
-# TODO: try to make mov files smaller? https://superuser.com/questions/525279/reduce-mov-file-size https://ffmpeg.org/ffmpeg-codecs.html
-# flags in ffmpeg command for conversion:
+
+# primary ffmpeg flags for video conversion:
 #   (best to store these in an array!) https://stackoverflow.com/a/29175560
 CONV_FLAGS=(
+    "${SPECIFIC_FLAGS[@]}"
     -threads "$FFMPEG_THREADS"
-    -c:a pcm_s16le
-    -af "aresample=async=1024"
+    -af "aresample=async=1024,apad"
     #-async 25
-    -af "apad"
     #-af "asettb=expr=1/48000"
     -shortest
     #-avoid_negative_ts make_zero
     #-video_track_timescale 600
     -fflags +genpts
-    -c:v dnxhd
-    -b:v $OUT_BITRATE
-    # TODO: crf option isn't working (for lowering file size):
-    #-crf 5 # Valid range is 0 (lower quality) to 63 (higher quality). Only used if set; by default only the bitrate target is used.
     -ar $AUDIO_FREQ # set the audio sampling frequency
     # important! videos must either be all stereo or all mono before concat:
     -ac 2 # force all videos to have exactly two audio channels
@@ -64,21 +74,44 @@ CONV_FLAGS=(
     -vf "settb=expr=1/30000,fps=$FPS,format=yuv422p"
 )
 
+function usage() {
+    echo "USAGE:"
+    echo "    ./process_config.sh <config_file> <output_folder> [--mov | --mp4]"
+    echo "EXAMPLES:"
+    echo "    ./process_config.sh project.ffpres .        # (uses default output format mp4)"
+    echo "    ./process_config.sh project.ffpres . --mov  # output as an mov file"
+    echo "    ./process_config.sh project.ffpres . --mp4  # output as an mp4 file"
+}
 function process_config() {
-    if [ "$#" -ne 2 ]; then
-        echo "ERROR expected 2 args, received: $#"
-        echo "USAGE:"
-        echo "  ./process_config.sh <config_file> <output_folder>"
-        echo "  EXAMPLE: ./process_config.sh project.ffpres ."
+    if [ "$#" ==  3 ]; then
+        if [ $3 == "--mov" ]; then
+            OUT_EXT="mov"
+        elif [ $3 == "--mp4" ]; then
+            OUT_EXT="mp4"
+        else
+            echo "ERROR invalid flag provided '$3'" >&2; usage; exit 1
+        fi
+    elif [ "$#" -ne 2 ]; then
+        echo "ERROR invalid usage" >&2; usage; exit 1
+    fi
+
+    if [ "$OUT_EXT" == "mp4" ]; then
+        SPECIFIC_FLAGS=("${mp4_flags[@]}")
+    elif [ "$OUT_EXT" == "mov" ]; then
+        SPECIFIC_FLAGS=("${mov_flags[@]}")
+    else
+        echo "ERROR: output extension '$OUT_EXT' not supported" >&2
         exit 1
     fi
+    echo -e "NOTE: using output extension '$OUT_EXT'"
+    # specific codec flags to actually use
 
     CONFIG_FILE="$1"
     FOLDER="$2/combined_output"
-    FOLDER_MOVS="$FOLDER/intermediary" # folder to store converted mov files
+    FOLDER_INTER="$FOLDER/intermediary" # folder to store converted mov files
     LOG_FILE="$FOLDER/ffmpeg-log.txt"
     OUT_LIST="$FOLDER/combine-list.txt"
-    OUT_COMBINED="$FOLDER/out-combined.mov"
+    OUT_COMBINED="$FOLDER/out-combined.$OUT_EXT"
     CONT="0" # "1" if we are continuing a previous run that failed
 
     if [ -d "$FOLDER" ]; then
@@ -91,7 +124,7 @@ function process_config() {
         rm -f "$OUT_LIST" # remove existing OUT_LIST (we will recreate it below)
     fi
     echo "All outputs will be saved in: \"${FOLDER}\"..."
-    mkdir -p "$FOLDER" && mkdir -p "$FOLDER_MOVS"
+    mkdir -p "$FOLDER" && mkdir -p "$FOLDER_INTER"
     echo "ffmpeg progress will be logged to: \"${LOG_FILE}\"..."
 
     echo -e "\ncurrent line (note lines starting with '#' are skipped):"
@@ -139,8 +172,8 @@ function process_config() {
         #   TODO: create a new folder and put all the new files in with the same hierachy as before???
         #   https://www.cyberciti.biz/faq/bash-get-basename-of-filename-or-directory-name/
         #   https://stackoverflow.com/a/14892459
-        #newFile="$(mktemp -u "$FOLDER_MOVS/`basename "$fname"`.XXXXX".${OUT_EXT})" # handles duplicates
-        local newFile="$FOLDER_MOVS/`basename "$fname"`.${OUT_EXT}" # TODO: this doesn't handle duplicates (files with same basename)
+        #newFile="$(mktemp -u "$FOLDER_INTER/`basename "$fname"`.XXXXX".${OUT_EXT})" # handles duplicates
+        local newFile="$FOLDER_INTER/`basename "$fname"`.${OUT_EXT}" # TODO: this doesn't handle duplicates (files with same basename)
         if [ -f "$newFile" ]; then
             if [[ "$CONT" == "1" ]]; then
                 # continue old run that may have failed half way:
