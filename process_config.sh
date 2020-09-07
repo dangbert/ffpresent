@@ -59,6 +59,7 @@ CONV_FLAGS=(
     # important! videos must either be all stereo or all mono before concat:
     -ac 2 # force all videos to have exactly two audio channels
     -shortest # needed for SILENT_FIX_FLAGS
+    -max_muxing_queue_size 9999 # fix for https://stackoverflow.com/q/49686244
     # NOTE: last flag must be the value for -vf (because later we will reference [-1] to modify it)
     -vf "settb=expr=1/30000,fps=$FPS,format=yuv422p"
 )

@@ -153,9 +153,7 @@ function get_res() {
 function get_dur() {
 
     FNAME="$1" # name of file to check
-    echo "get_dur fname='$FNAME'" >> /dev/stderr
     val=`ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=s=x:p=0 -i "$FNAME" 2>/dev/null | head -n 1`
-    #echo "fname='$FNAME', val='$val'"
     if [[ "$val" == "N/A" ]]; then
         echo "NA"
     else
