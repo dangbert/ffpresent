@@ -31,6 +31,7 @@ mp4_flags=(
     -c:a aac #libfdk_aac # https://trac.ffmpeg.org/wiki/Encode/AAC
     -c:v libx264
     -b:v 1M
+    -strict -2
     # TODO: crf option isn't working (for lowering file size):
     #-crf 5 # Valid range is 0 (lower quality) to 63 (higher quality). Only used if set; by default only the bitrate target is used.
 )
@@ -63,7 +64,6 @@ SILENT_FIX_FLAGS=(
 # primary ffmpeg flags for video conversion:
 #   (best to store these in an array!) https://stackoverflow.com/a/29175560
 CONV_FLAGS=(
-    "${SPECIFIC_FLAGS[@]}"
     -threads "$FFMPEG_THREADS"
     -af "aresample=async=1024,apad"
     #-async 25
@@ -76,7 +76,6 @@ CONV_FLAGS=(
     # important! videos must either be all stereo or all mono before concat:
     -ac 2 # force all videos to have exactly two audio channels
     -shortest # needed for SILENT_FIX_FLAGS
-    -max_muxing_queue_size 30000 # fix for https://stackoverflow.com/q/49686244
     # NOTE: last flag must be the value for -vf (because later we will reference [-1] to modify it)
     -vf "settb=expr=1/30000,fps=$FPS,format=yuv422p"
 )
@@ -107,6 +106,7 @@ function process_config() {
 
     if [ "$OUT_EXT" == "mp4" ]; then
         SPECIFIC_FLAGS=("${mp4_flags[@]}")
+        echo "using mp4_flags"
     elif [ "$OUT_EXT" == "mov" ]; then
         SPECIFIC_FLAGS=("${mov_flags[@]}")
     elif [ "$OUT_EXT" == "webm" ]; then
@@ -121,7 +121,7 @@ function process_config() {
     CONFIG_FILE="$1"
     FOLDER="$2/combined_output"
     FOLDER_INTER="$FOLDER/intermediary" # folder to store converted mov files
-    LOG_FILE="$FOLDER/ffmpeg-log.txt"
+    LOG_FILE="$FOLDER/log-ffmpeg.txt"
     OUT_LIST="$FOLDER/combine-list.txt"
     OUT_COMBINED="$FOLDER/out-combined.$OUT_EXT"
     CONT="0" # "1" if we are continuing a previous run that failed
@@ -204,7 +204,8 @@ function process_config() {
         fi
         ###
 
-        local conv_flags=("${CONV_FLAGS[@]}")         # copy array of flags
+        local conv_flags=("${SPECIFIC_FLAGS[@]}" "${CONV_FLAGS[@]}")         # copy array of flags
+        #printf 'flags: %s\n' "${conv_flags[@]}"
         local pre_flags=()                            # flags coming in command before "-i $fname"
         ########
         # flags to force videos with no audio stream to have a silent audio stream:
@@ -213,11 +214,11 @@ function process_config() {
             pre_flags=("${SILENT_FIX_FLAGS[@]}")
         fi
         ########
+        local imgDur="$IMG_DUR"
+        if [[ "$dur" =~ ^[0-9]+([.][0-9]+)?$ ]]; then # check if $dur is a number (int or float)
+            imgDur="$dur"
+        fi
         if [ "$fType" == "image" ]; then
-            local imgDur="$IMG_DUR"
-            if [[ "$dur" =~ ^[0-9]+([.][0-9]+)?$ ]]; then # check if $dur is a number (int or float)
-                imgDur="$dur"
-            fi
             # adjust flags as needed to convert this image to a video:
             pre_flags+=("-loop" "1" "-f" "image2")
             conv_flags=("-t" "$imgDur" "${conv_flags[@]}")
@@ -228,6 +229,12 @@ function process_config() {
             # TODO: add ability to slowly zoom in or zoom out on images
             #   https://superuser.com/a/1127759
             #   https://ffmpeg.org/ffmpeg-filters.html#zoompan
+          elif [ "$fType" == "video" ]; then
+            if [ "$fname" == "*.webm" ]; then
+              # only use this option when file ends in '.webm'?
+              conv_flags=(-max_muxing_queue_size 30000 "${conv_flags[@]}") # fix for https://stackoverflow.com/q/49686244
+            fi
+            #conv_flags=("-t" "$imgDur" "${conv_flags[@]}") # limit video length too
         fi
 
         # compare current to desired aspect ratio to desired to determine how to scale (before padding)
@@ -253,11 +260,13 @@ function process_config() {
 
         # print command to log then re-encode:
         echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"$vf_args\" \"${newFile}\""  >>"${LOG_FILE}"
+
+        #printf 'runnign with flags: %s\n' "${conf_flags[@]}"
         ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newFile}"  </dev/null >>"${LOG_FILE}" 2>&1
         exitCode=$?
         if [ "$exitCode" -ne "0" ]; then
             rm -f "${newFile}"
-            echo "ERROR: (exit code $exitCode) converting video: \"$fname\" (skipping for now)...\n"
+            echo -e "ERROR: (exit code $exitCode) converting video: \"$fname\" (skipping for now)...\n"
             errCount="$((errCount+1))"
             continue
         fi
@@ -291,9 +300,11 @@ function process_config() {
     exitCode=$?
     if [ "$exitCode" -ne "0" ]; then
         echo "  ERROR: (exit code $exitCode) combining videos"
-        exit 1
+        errCount="$((errCount+1))"
+        exit $errCount
     fi
     echo "  combined video generated: \"$OUT_COMBINED\""
+    exit $errCount
 }
 
 if [ -z `which ffmpeg` ] || [ -z `which ffprobe` ]; then
