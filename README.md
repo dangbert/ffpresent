@@ -1,37 +1,60 @@
-# FFMPEG Tools for Combining a List of Videos Together
+# ffpresent
+This commandline tool combines videos/images of arbitrary formats/resolutions into a single video.
 
-This tools works on almost any images/videos regardless of their codecs.
-* It converts everything to the same codec (video: dnxhd, audio: pcm_s16le) before combining into the final video.
+### How it works:
+* Uses ffmpeg to convert all desired images/videos into individual videos of the same format, and then merges everything into a single video (see advanced usage to specify the output format), and adds padding as needed so the final video is 1920x1080 (allowing you to combine videos of different resolutions).
   * (I selected these output codecs because they always works with the Davinci Resolve video editing software).
 
-### How to combine videos (using the scripts):
-1. Create config file `project.ffpres`
-  * (defines which pictures/videos appear in the combined video and in what order)
-
+### How to use:
+1. Create the config file `project.ffpres`:
 ````bash
-# generate list.txt and project.ffpres:
-./generate_config.sh  # run with no args and follow the prompts
-# or run with args:
-#./generate_config "<folder_with_videos>" <ext1> <ext2> <ext3> <...>
-./generate_config.sh "/media/dan/My Passport/CALI/" mov MOV mp4 MP4 jpg
+# run with no arguments, and follow the interactive prompts:
+./ffgenerate.sh
+````
+
+  * Note that `project.ffpres` defines a list of pictures/video files to be combined in the order they appear in the file (initially ordered by increasing date).
+    * After generating this file you can remove files from the list by adding a `#` symbol to the start of a line or by deleting the line entirely.
+    * for image files, you can optionally edit the duration field from `NA` to a number like `5` or `1.2` to set the duration the image will be shown for in the outputted video.  If you don't change this value, the default will be used (as defined by `IMG_DUR` at the top of `ffpresent.sh`).
+
+2. Now generate the combined video defined by `project.ffpres`:
+````bash
+./ffpresent.sh project.ffpres .
+# the program expects 2 arguments of the form:
+./ffpresent.sh /path/to/project.ffpres /path/to/desired/output/dir
+````
+
+* after running, the combined video `out-combined.mp4` will appear in the folder `combined_output/` within the provided `output_dir`
+  * you can also view `log-ffmpeg.txt` in the output directory to troubleshoot if anything went wrong.
+
+#### Advanced usage:
+* choose your desired output video format: `mp4`, `mov`, `webm` are supported (default is `mp4`)
+````bash
+# specify the desired output format (mp4, mov, and webm)
+./ffpresent.sh project.ffpres . --mp4
+./ffpresent.sh project.ffpres . --mov
+./ffpresent.sh project.ffpres . --webm
+````
+
+  * `mov` (video codec: dnxhd, audio: pcm_s16le) will be higher quality, but the video filesize will be much larger.  (However this format works well with [Davinci Resolve](https://www.blackmagicdesign.com/products/davinciresolve/) for video editing).
+
+
+* other ways to generate `project.ffpres`:
+````bash
+# run with arguments instead of interactive mode:
+./ffgenerate.sh "<folder_with_videos>" <ext1> <ext2> <ext3> <...>
+# for example:
+./ffgenerate.sh "/media/dan/My Passport/CALI/" mov MOV mp4 MP4 jpg
 #
-# if you have a list of filenames you can also generate project.ffpres with:
-./generate_config.sh -g list.txt
+# or if you have a list of filenames (one per line) you can also generate project.ffpres with:
+./ffgenerate.sh -g list.txt
 ````
-  * then go through `project.ffpres` and delete any lines containing files you don't want combined, and reorder the files as desired.  You can also comment out a line by starting the line with '#'.
-  * (videos will be combined later in the order they appear in this file).
-
-2. Generate the combined video from the project config:
-````bash
-./process_config.sh project.ffpres <output_dir>
-./process_config.sh project.ffpres .
-````
-* the combined video `out-combined.mov` and the file `combine-list.txt` will be generated in the folder `combined_output/` within the provided `output_dir`
 
 ---
 ### Known limitations:
+* Note that drives formatted with the FAT32 filesystem dont't support storing mp4 files above 4GB.  This can lead to the error "av_interleaved_write_frame() file too large" [more info](https://stackoverflow.com/q/29179624).
 * file names containing a comma will mess up the scripts?
 * file names containing an apostrophe will mess up the combination process (I will fix this soon)
+* The script is kind of slow (best to leave running overnight when combining many videos).  In the future I will experiment further with parallel processing.
 
 ---
 ### Future Ideas:
