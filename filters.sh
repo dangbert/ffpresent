@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # contains functions for further filtering/sorting a list of files (list.txt)
 
 # this is a tool for sorting files

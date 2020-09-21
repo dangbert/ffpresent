@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #################################################
 # reads config file ($1)
 #   and converts each file one by one to dnxhd according to provided config
@@ -249,6 +249,7 @@ function process_config() {
         fi
 
         # debug mode (ovelay text details on videos):
+        # TODO: debug text appears to only work on images?
         if [ "$DEBUG" -eq "1" ]; then
             local debugText="line #${curLine}, \"$(basename "$fname")\""
             # using printf to escape symbols like spaces, etc https://stackoverflow.com/a/12811033

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # script to create the config file to provide as input to process_config.sh
 # (to combine many videos/pictures into one)
 # TODO: consider putting the date in list.txt as a comment at the end of the line
