@@ -19,7 +19,7 @@ OUT_SCALE=("1920" "1080")  # output resoulution
 FPS="25"                   # frames per second (25, 30000/1001, 50, ...)
 AUDIO_FREQ="48000"         # output audio frequency in HZ (number of samples of audio carried per second)
 IMG_DUR="3.5"              # default image duration (sec). overwritten by "dur" field in config if a number is provided there
-B_COLOR="Black"            # background color for padding videos to fit OUT_SCALE
+B_COLOR="black"            # background color for padding videos to fit OUT_SCALE (set to "blur" to blur background instead)
 FFMPEG_THREADS="1"         # number of threads for ffmpeg to use
 DEBUG="0"                  # 0 for normal mode, 1 for debug mode (overlaid text details on video)
 FONT="/usr/share/fonts/gnu-free/FreeSans.ttf"   # path to font file used for debug text
@@ -30,7 +30,7 @@ OUT_EXT="mp4"              # default output file extension ("mp4" or "webm" or "
 mp4_flags=(
     -c:a aac #libfdk_aac # https://trac.ffmpeg.org/wiki/Encode/AAC
     -c:v libx264
-    -b:v 1M
+    -b:v 2M
     -strict -2
     # TODO: crf option isn't working (for lowering file size):
     #-crf 5 # Valid range is 0 (lower quality) to 63 (higher quality). Only used if set; by default only the bitrate target is used.
@@ -82,12 +82,12 @@ CONV_FLAGS=(
 
 function usage() {
     echo "USAGE:"
-    echo "    ./process_config.sh <config_file> <output_folder> [--mov | --mp4]"
+    echo "    ./ffpresent.sh <config_file> <output_folder> [--mov | --mp4 | --webm]"
     echo "EXAMPLES:"
-    echo "    ./process_config.sh project.ffpres .         # (uses default output format mp4)"
-    echo "    ./process_config.sh project.ffpres . --mov   # output as mov file"
-    echo "    ./process_config.sh project.ffpres . --mp4   # output as mp4 file"
-    echo "    ./process_config.sh project.ffpres . --webm  # output as webm file"
+    echo "    ./ffpresent.sh project.ffpres .         # (uses default output format mp4)"
+    echo "    ./ffpresent.sh project.ffpres . --mov   # output as mov file"
+    echo "    ./ffpresent.sh project.ffpres . --mp4   # output as mp4 file"
+    echo "    ./ffpresent.sh project.ffpres . --webm  # output as webm file"
 }
 function process_config() {
     if [ "$#" ==  3 ]; then
@@ -125,6 +125,10 @@ function process_config() {
     OUT_LIST="$FOLDER/combine-list.txt"
     OUT_COMBINED="$FOLDER/out-combined.$OUT_EXT"
     CONT="0" # "1" if we are continuing a previous run that failed
+    if [ "$B_COLOR" == "blur" ] && [ "$DEBUG" -eq "1" ]; then
+        # in debug mode, don't waste time blurring the background
+        B_COLOR="black"
+    fi
 
     if [ -d "$FOLDER" ]; then
         echo "output folder \"$FOLDER\" already exists. Delete and try again."
@@ -232,6 +236,7 @@ function process_config() {
           elif [ "$fType" == "video" ]; then
             if [ "$fname" == "*.webm" ]; then
               # only use this option when file ends in '.webm'?
+              # TODO: be insensitive to case in filename check
               conv_flags=(-max_muxing_queue_size 30000 "${conv_flags[@]}") # fix for https://stackoverflow.com/q/49686244
             fi
             #conv_flags=("-t" "$imgDur" "${conv_flags[@]}") # limit video length too
@@ -239,13 +244,29 @@ function process_config() {
 
         # compare current to desired aspect ratio to desired to determine how to scale (before padding)
         #   https://ffmpeg.org/ffmpeg-filters.html#pad-1
-        if [ "$(awk -v a="$width" -v b="$height" -v c="${OUT_SCALE[0]}" -v d="${OUT_SCALE[1]}" "BEGIN{print( a/b <= c/d )}")" -eq "1" ]; then
-            # and example of this case would be a vertical video (where we'd want to add black bars on either side)
-            # prepend to vf filters:
-            conv_flags[-1]="scale=-1:${OUT_SCALE[1]},pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:x=(ow-iw)/2:color=${B_COLOR},${conv_flags[-1]}"
+        if [ "$width" == "${OUT_SCALE[0]}" ] && [ "$height" == "${OUT_SCALE[1]}" ]; then
+            : # no op
+        elif [ "$(awk -v a="$width" -v b="$height" -v c="${OUT_SCALE[0]}" -v d="${OUT_SCALE[1]}" "BEGIN{print( a/b <= c/d )}")" -eq "1" ]; then
+            # and example of this case would be a (skinny) vertical video (where we'd want to add black bars on either side)
+            if [ "$B_COLOR" == "blur" ]; then
+                # add a blurred background (instead of a solid color) to get right dimensions
+                #   based loosely on https://stackoverflow.com/a/54618683
+                # blurred: scale width to desired output (e.g. 1920), then crop off excess height and blur
+                local blurred_args="scale=${OUT_SCALE[0]}:-1,crop=${OUT_SCALE[0]}:${OUT_SCALE[1]}:0:(ih-${OUT_SCALE[1]})/2, gblur=sigma=20"
+                conv_flags[-1]="[IN]scale=-1:${OUT_SCALE[1]}[original]; [original]split [original][copy]; [copy]${blurred_args}[blurred]; [blurred][original]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2[OUT]"
+            else
+                # pad background with a solid color
+                conv_flags[-1]="scale=-1:${OUT_SCALE[1]},pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:x=(ow-iw)/2:color=${B_COLOR},${conv_flags[-1]}"
+            fi
         else
-            # and example of this case would be a very wide panorama image
-            conv_flags[-1]="scale=${OUT_SCALE[0]}:-1,pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:y=(oh-ih)/2:color=${B_COLOR},${conv_flags[-1]}"
+            # an example of this case would be a very wide panorama image
+            if [ "$B_COLOR" == "blur" ]; then
+                local blurred_args="scale=-1:${OUT_SCALE[1]},crop=${OUT_SCALE[0]}:${OUT_SCALE[1]}:0:(ih-${OUT_SCALE[1]})/2, gblur=sigma=20"
+                conv_flags[-1]="[IN]scale=${OUT_SCALE[0]}:-1[original]; [original]split [original][copy]; [copy]${blurred_args}[blurred]; [blurred][original]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2[OUT]"
+            else
+                # pad background with a solid color
+                conv_flags[-1]="scale=${OUT_SCALE[0]}:-1,pad=${OUT_SCALE[0]}:${OUT_SCALE[1]}:y=(oh-ih)/2:color=${B_COLOR},${conv_flags[-1]}"
+            fi
         fi
 
         # debug mode (ovelay text details on videos):
@@ -255,7 +276,8 @@ function process_config() {
             # using printf to escape symbols like spaces, etc https://stackoverflow.com/a/12811033
             conv_flags[-1]="${conv_flags[-1]},drawtext=fontfile=${FONT}:text='$(printf %q "$debugText")':fontcolor=white:fontsize=24:box=1:boxcolor=black:x=(w-text_w)/2:y=h-th"
         fi
-        # allows us to put extra quotes around vf_args in the command below (needed when doing text overlay e.g. if there's a space in the text)
+        # pop arg string for -vf option into a different variable
+        #   allows us to put extra quotes around vf_args in the command below (needed when doing text overlay e.g. if there's a space in the text)
         local vf_args="${conv_flags[-1]}"
         conv_flags[-1]=""
 
@@ -264,6 +286,7 @@ function process_config() {
 
         #printf 'runnign with flags: %s\n' "${conf_flags[@]}"
         ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newFile}"  </dev/null >>"${LOG_FILE}" 2>&1
+        # trying to combine these args
         exitCode=$?
         if [ "$exitCode" -ne "0" ]; then
             rm -f "${newFile}"
