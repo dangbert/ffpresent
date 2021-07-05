@@ -194,7 +194,7 @@ function process_config() {
             if [[ "$CONT" == "1" ]]; then
                 # continue old run that may have failed half way:
                 echo -e "\tNOTE: skipping existing file '$newFile'"
-                    if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
+                if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
                     # fix for windows https://stackoverflow.com/a/8597411 (where absolute path doesn't work in this file)
                     newFile="$(basename $(dirname "$newFile"))/$(basename "$newFile")"
                 fi
@@ -284,23 +284,23 @@ function process_config() {
         # print command to log then re-encode:
         echo -e "\nffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i \"$fname\" ${conv_flags[@]} \"$vf_args\" \"${newFile}\""  >>"${LOG_FILE}"
 
-        #printf 'runnign with flags: %s\n' "${conf_flags[@]}"
+        #printf 'running with flags: %s\n' "${conf_flags[@]}"
         ffmpeg -hide_banner -loglevel warning -y ${pre_flags[@]} -i "$fname" ${conv_flags[@]} "$vf_args" "${newFile}"  </dev/null >>"${LOG_FILE}" 2>&1
         # trying to combine these args
         exitCode=$?
+        # TODO: replace occurences of ' in $newFile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
+        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
+            # fix for windows https://stackoverflow.com/a/8597411 (where absolute path doesn't work in this file)
+            newFile="$(basename $(dirname "$newFile"))/$(basename "$newFile")"
+        fi
         if [ "$exitCode" -ne "0" ]; then
             rm -f "${newFile}"
             echo -e "ERROR: (exit code $exitCode) converting video: \"$fname\" (skipping for now)...\n"
             errCount="$((errCount+1))"
             continue
         fi
-        # TODO: also preserve metadata from original file (date created, etc)?
-        # TODO: replace occurences of ' in $newFile with '\'' https://superuser.com/a/787651 (in case image has ' in its filename)
-        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-            # fix for windows https://stackoverflow.com/a/8597411 (where absolute path doesn't work in this file)
-            newFile="$(basename $(dirname "$newFile"))/$(basename "$newFile")"
-        fi
         printf "file \'$newFile\'\n" >> "$OUT_LIST" # store the path to this file in "$OUT_LIST"
+        touch -r "$fname" "$newFile" # copy original timestamps
     done < "$CONFIG_FILE"
 
     echo -e "\n*****************:\nFinished re-encoding videos!"
