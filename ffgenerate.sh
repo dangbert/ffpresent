@@ -5,7 +5,16 @@
 #       (also would have to make the comment feature smarter)
 #       (just take the substring of the line up to the comment if it exsits)
 #       (and maybe also remove whitespace, skip line if the substring is empty, etc)
-#
+
+set -e
+
+# for mac
+find() {
+  gfind "$@"
+}
+date() {
+  gdate "$@"
+}
 
 # global constants
 OUT_LIST="list.txt"
@@ -19,7 +28,7 @@ function menu() {
     done
 
     echo -e "\nList of all filetypes in target folder for reference:"
-    find "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u | tr '\r\n' ' ' && echo ""
+    gfind "$FOLDER" -type f -name '*.*' | sed 's|.*\.||' | sort -u | tr '\r\n' ' ' && echo ""
     echo -e "****************************************************"
 
     # TODO: https://www.commandlinefu.com/commands/view/12759/join-the-content-of-a-bash-array-with-commas
@@ -67,6 +76,7 @@ function create_list() {
     # TODO: consider putting "# date generated: ..." at the top of the outputted files, etc
     echo -e "\ncreating list: '$OUT_LIST'"...
     # escaping with a \t instead of a comma allows filenames containing a comma
+
     find "$FOLDER" -type f -regex "${search_str}" -printf "%TY-%Tm-%Td %TT\t%p\0" | sort -z | while read -d $'\0' line
     do
         #local dateStr="$(echo "$line" | cut -d'\t' -f1 | cut -d'.' -f1)" # e.g. '2020-02-27 13:30:04'
@@ -151,7 +161,6 @@ function get_res() {
 
 # returns duration of video in string format "HH:MM:SS"
 function get_dur() {
-
     FNAME="$1" # name of file to check
     val=`ffprobe -v error -select_streams v:0 -show_entries stream=duration -of csv=s=x:p=0 -i "$FNAME" 2>/dev/null | head -n 1`
     if [[ "$val" == "N/A" ]]; then

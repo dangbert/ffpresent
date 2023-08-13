@@ -1,0 +1,14 @@
+#### production docker-compose config
+version: "3.8"
+# note: a default network is created between the containers:
+#   https://docs.docker.com/compose/networking/
+#   sudo docker network inspect pp_prod_default
+
+services:
+  # flask container config:
+  ffpresent:
+    #platform: ${PROD_PLATFORM}
+    build:
+      context: ../
+      # location of dockerfile (relative to context path above):
+      dockerfile: ./docker/Dockerfile
